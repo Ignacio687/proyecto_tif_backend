@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+motor
+loguru
+google-genai
+python-dotenv
+beanie
