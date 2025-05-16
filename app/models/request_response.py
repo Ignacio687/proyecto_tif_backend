@@ -1,5 +1,11 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
+from datetime import datetime
+
+class Conversation(BaseModel):
+    user_input: str = Field(..., description="User input for the assistant")
+    server_reply: str = Field(..., description="Server's reply to the user")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of the interaction")
 
 class UserRequest(BaseModel):
     user_req: str = Field(..., description="User input for the assistant")
