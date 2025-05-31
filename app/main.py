@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.v1.controllers import router as v1_router
+from app.api.assistant_controller import router as v1_router
 from app.logger import logger
 from contextlib import asynccontextmanager
 from beanie import init_beanie
