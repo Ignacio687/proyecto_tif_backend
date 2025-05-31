@@ -3,40 +3,33 @@ from google import genai
 from google.genai import types
 from app.config import settings
 from app.logger import logger
+from app.repositories.mongo_repository import MongoRepository
+from app.models.request_response import ServerResponse
 
 class GeminiService:
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY
 
-    def build_and_update_summarized_context(self, conversations, new_interaction=None, max_items=10):
+    def build_and_update_summarized_context(self, summarized_context, new_interaction=None, max_items=10):
         """
-        Build and update the summarized context from previous conversations and an optional new interaction.
-        Only interactions with relevant_for_context=True are included. If new_interaction is provided, it is considered for inclusion.
-        Returns a list of dicts with relevant_info, timestamp, and context_priority, ordered by priority (highest first).
+        Update the summarized context (list of relevant interactions) by adding the new interaction if relevant.
+        If the new interaction is relevant, add it and remove the lowest-priority one if the limit is reached.
         """
-        if not conversations:
-            return []
-        # Filter only relevant interactions
-        relevant = [
-            c for c in conversations
-            if c.get('interaction_params', {}).get('relevant_for_context')
-            and 'context_priority' in c.get('interaction_params', {})
-            and 'relevant_info' in c.get('interaction_params', {})
-        ]
-        # Optionally add the new interaction if relevant
+        # If no summarized context, start with empty list
+        if not summarized_context:
+            summarized_context = []
+        # Only add the new interaction if it is relevant
         if new_interaction and new_interaction.get('interaction_params', {}).get('relevant_for_context'):
-            relevant.append(new_interaction)
-        # Sort by context_priority
-        relevant.sort(key=lambda c: c['interaction_params']['context_priority'], reverse=True)
-        # Build summarized context with all required fields
-        summarized = []
-        for c in relevant[:max_items]:
-            summarized.append({
-                'relevant_info': c['interaction_params']['relevant_info'],
-                'timestamp': c.get('timestamp'),
-                'context_priority': c['interaction_params']['context_priority']
+            summarized_context.append({
+                'relevant_info': new_interaction['interaction_params']['relevant_info'],
+                'timestamp': new_interaction.get('timestamp'),
+                'context_priority': new_interaction['interaction_params']['context_priority']
             })
-        return summarized
+            # Sort by context_priority descending
+            summarized_context.sort(key=lambda c: c['context_priority'], reverse=True)
+            # Trim to max_items
+            summarized_context = summarized_context[:max_items]
+        return summarized_context
 
     async def save_summarized_context(self, summarized_context, repository):
         """
@@ -50,17 +43,17 @@ class GeminiService:
         """
         return await repository.get_summarized_context()
 
-    async def get_gemini_response(self, prompt: str, repository=None, context_conversations=None) -> dict:
+    async def get_gemini_response(self, prompt: str, summarized_context=None, last_conversations=None, context_conversations=None) -> dict:
         """
-        Sends the prompt and summarized context to Gemini, gets the response, and updates the summarized context in the database.
-        If repository is None, only queries Gemini (legacy/test mode).
+        Sends the prompt and summarized context to Gemini and gets the response. No repository access here.
         """
         client = genai.Client(api_key=self.api_key)
         model = "gemini-2.0-flash-lite"
-        # 1. Load last conversations for context
-        last_conversations = []
-        if repository is not None:
-            last_conversations = await repository.get_last_conversations()
+        # 1. Use provided last_conversations and summarized_context
+        if last_conversations is None:
+            last_conversations = []
+        if summarized_context is None:
+            summarized_context = []
         # 2. Build fixed context
         fixed_context = (
             "You are a virtual assistant. Your responses must be structured as a JSON object with the following fields, matching exactly the provided schema and field names. Do not invent or omit fields.\n"
@@ -84,21 +77,16 @@ class GeminiService:
             types.Content(role="user", parts=[types.Part.from_text(text=fixed_context)]),
         ]
         # 3. Add summarized context if available
-        summarized_context = []
-        if repository is not None:
-            summarized_context = await self.load_summarized_context(repository)
-            logger.debug(f"[GeminiService] Loaded summarized context: {summarized_context}")
         if summarized_context:
-            summary_text = "Summarized context of previous important interactions (highest priority first):\n" + "\n".join(
+            summary_text = "Summarized context of previous important interactions:\n" + "\n".join(
                 f"[{c.get('timestamp', '')} | priority: {c.get('context_priority', '')}] {c['relevant_info']}" for c in summarized_context
             )
             logger.debug(f"[GeminiService] Summarized context string sent to Gemini: {summary_text}")
-            contents.append(types.Content(role="system", parts=[types.Part.from_text(text=summary_text)]))
+            contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"[CONTEXT SUMMARY]\n{summary_text}")]))
         # 4. Add conversational context if available
         filtered_context_conversations = []
         if context_conversations:
             for conv in reversed(context_conversations):
-                # Only include user_input, server_reply, and timestamp for prompt and logs
                 user_input = conv.get('user_input', '')
                 server_reply = conv.get('server_reply', '')
                 timestamp = conv.get('timestamp', None)
@@ -108,7 +96,6 @@ class GeminiService:
                     'timestamp': timestamp
                 })
                 contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"User: {user_input} (at {timestamp})")]))
-                # Remove any leading 'Assistant:' (case-insensitive) and extra whitespace
                 clean_reply = server_reply
                 if clean_reply.lower().startswith('assistant:'):
                     clean_reply = clean_reply[len('assistant:'):].strip()
@@ -188,15 +175,43 @@ class GeminiService:
         import json
         gemini_response = json.loads(response_text)
         logger.debug(f"Parsed Gemini response: {gemini_response}")
-        # 6. If repository is provided, update summarized context with the new interaction
-        if repository is not None:
-            new_interaction = {
-                'interaction_params': gemini_response.get('interaction_params', {}),
-                'server_reply': gemini_response.get('server_reply', ''),
-                'user_input': prompt
-            }
-            updated_summarized_context = self.build_and_update_summarized_context(
-                last_conversations, new_interaction=new_interaction
-            )
-            await self.save_summarized_context(updated_summarized_context, repository)
         return gemini_response
+
+    async def handle_user_request(self, user_req: str):
+        """
+        Orchestrates the full flow: loads context, calls Gemini, saves conversation and summarized context, and returns ServerResponse.
+        """
+        repository = MongoRepository()
+        # 1. Get last conversations
+        last_conversations = await repository.get_last_conversations()
+        # 2. Get summarized context
+        summarized_context = await repository.get_summarized_context()
+        # 3. Call Gemini
+        gemini_reply = await self.get_gemini_response(
+            user_req,
+            summarized_context=summarized_context,
+            last_conversations=last_conversations,
+            context_conversations=last_conversations
+        )
+        # 4. Save the conversation
+        await repository.save_conversation(
+            user_req,
+            gemini_reply.get('server_reply', ''),
+            gemini_reply.get('interaction_params')
+        )
+        # 5. Update summarized context
+        new_interaction = {
+            'interaction_params': gemini_reply.get('interaction_params', {}),
+            'server_reply': gemini_reply.get('server_reply', ''),
+            'user_input': user_req
+        }
+        updated_summarized_context = self.build_and_update_summarized_context(
+            summarized_context, new_interaction=new_interaction
+        )
+        await self.save_summarized_context(updated_summarized_context, repository)
+        # 6. Return structured response
+        return ServerResponse(
+            server_reply=gemini_reply.get('server_reply', ''),
+            app_params=gemini_reply.get('app_params'),
+            skills=gemini_reply.get('skills')
+        )

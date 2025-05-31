@@ -2,6 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import settings
 from datetime import datetime
 from app.models.request_response import Conversation
+from app.logger import logger
 
 class MongoRepository:
     def __init__(self):
@@ -38,6 +39,7 @@ class MongoRepository:
         Load the summarized context from the database (summarized_context collection).
         """
         doc = await self.db["summarized_context"].find_one({})
+        logger.debug(f"[MongoRepository] Raw summarized_context doc from DB: {doc}")
         if doc and "interactions" in doc:
             return doc["interactions"]
         return []
