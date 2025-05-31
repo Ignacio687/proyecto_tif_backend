@@ -17,7 +17,7 @@ class Skill(BaseModel):
 
 class ServerResponse(BaseModel):
     server_reply: str
-    app_params: Optional[List[Any]] = None
+    app_params: Optional[List[Dict[str, bool]]] = None
     skills: Optional[List[Skill]] = None
 
 class SummarizedInteraction(BaseModel):
