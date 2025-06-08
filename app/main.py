@@ -1,21 +1,22 @@
 from fastapi import FastAPI
-from app.api.assistant_controller import router as v1_router
+from app.api.assistant_controller import router as assistant_router
+from app.api.auth_controller import router as auth_router
 from app.logger import logger
+from app.database import db_manager
 from contextlib import asynccontextmanager
-from beanie import init_beanie
-from motor.motor_asyncio import AsyncIOMotorClient
-from app.config import settings
-from app.models.user import User
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting TIF Backend API...")
-    # Initialize Beanie
-    client = AsyncIOMotorClient(settings.MONGODB_URI)
-    await init_beanie(database=client['tif_db'], document_models=[User])
+    # Initialize database
+    await db_manager.initialize_database()
     yield
+    # Close database connection
+    await db_manager.close_database()
     logger.info("Shutting down TIF Backend API...")
 
 app = FastAPI(title="TIF Backend API", version="1.0.0", lifespan=lifespan)
 
-app.include_router(v1_router, prefix="/api/v1")
+# Include routers
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["authentication"])
+app.include_router(assistant_router, prefix="/api/v1", tags=["assistant"])

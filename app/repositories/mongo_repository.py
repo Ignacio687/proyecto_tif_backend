@@ -1,8 +1,14 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import settings
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.request_response import Conversation
 from app.logger import logger
+
+
+def utc_now() -> datetime:
+    """Get current UTC datetime with timezone awareness"""
+    return datetime.now(timezone.utc)
+
 
 class MongoRepository:
     def __init__(self):
@@ -14,7 +20,7 @@ class MongoRepository:
         conversation = {
             "user_input": user_input,
             "server_reply": server_reply,
-            "timestamp": datetime.utcnow()
+            "timestamp": utc_now()
         }
         if interaction_params is not None:
             conversation["interaction_params"] = interaction_params
