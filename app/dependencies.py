@@ -6,7 +6,7 @@ from app.services.assistant_service import AssistantService
 from app.services.gemini_service import GeminiService
 from app.repositories.user_repository import UserRepository
 from app.repositories.conversation_repository import ConversationRepository
-from app.repositories.summarized_context_repository import SummarizedContextRepository
+from app.repositories.key_context_repository import KeyContextRepository
 
 
 class DependencyContainer:
@@ -36,9 +36,9 @@ class DependencyContainer:
         return self._conversation_repository
     
     @property
-    def context_repository(self) -> SummarizedContextRepository:
+    def context_repository(self) -> KeyContextRepository:
         if self._context_repository is None:
-            self._context_repository = SummarizedContextRepository()
+            self._context_repository = KeyContextRepository()
         return self._context_repository
     
     @property
@@ -81,5 +81,5 @@ def get_conversation_repository() -> ConversationRepository:
     return container.conversation_repository
 
 
-def get_context_repository() -> SummarizedContextRepository:
+def get_context_repository() -> KeyContextRepository:
     return container.context_repository

@@ -19,6 +19,14 @@ class Settings:
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str = os.environ.get("GOOGLE_CLIENT_ID", "")
     
+    # Email settings
+    SMTP_SERVER: str = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT: int = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USERNAME: str = os.environ.get("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD", "")
+    FROM_EMAIL: str = os.environ.get("FROM_EMAIL", "")
+    FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    
     # Application settings
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
     DEBUG: bool = os.environ.get("DEBUG", "False").lower() == "true"

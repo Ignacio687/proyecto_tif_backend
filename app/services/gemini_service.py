@@ -18,71 +18,21 @@ class GeminiService(GeminiServiceInterface):
         self.client = genai.Client(api_key=self.api_key)
         self.model = "gemini-2.0-flash-lite"
 
-    def build_and_update_summarized_context(self, summarized_context: List[Dict[str, Any]], 
-                                           new_interaction: Optional[Dict[str, Any]] = None, 
-                                           max_items: int = 10, 
-                                           context_updates: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-        """
-        Update the summarized context (list of relevant interactions) by adding the new interaction if relevant.
-        - Number the entries (add 'entry_number' field, 1-based).
-        - Process context_updates to update priorities as requested by Gemini.
-        - If the new interaction is relevant, add it and remove the lowest-priority one if the limit is reached.
-        """
-        # If no summarized context, start with empty list
-        if not summarized_context:
-            summarized_context = []
-            
-        # Number entries (1-based)
-        for idx, entry in enumerate(summarized_context, start=1):
-            entry['entry_number'] = idx
-            
-        # Process context_updates if provided
-        if context_updates:
-            for update in context_updates:
-                entry_number = update.get('entry_number')
-                new_priority = update.get('new_priority')
-                if entry_number is not None and new_priority is not None:
-                    # entry_number is 1-based
-                    idx = entry_number - 1
-                    if 0 <= idx < len(summarized_context):
-                        summarized_context[idx]['context_priority'] = new_priority
-        
-        # Only add the new interaction if it is relevant
-        if new_interaction and new_interaction.get('interaction_params', {}).get('relevant_for_context'):
-            summarized_context.append({
-                'relevant_info': new_interaction['interaction_params']['relevant_info'],
-                'timestamp': new_interaction.get('timestamp'),
-                'context_priority': new_interaction['interaction_params']['context_priority']
-            })
-        
-        # Remove entries with context_priority 0
-        summarized_context = [entry for entry in summarized_context if entry.get('context_priority', 1) != 0]
-        
-        # Sort by context_priority descending
-        summarized_context.sort(key=lambda c: c['context_priority'], reverse=True)
-        
-        # Trim to max_items
-        summarized_context = summarized_context[:max_items]
-        
-        # Re-number after changes
-        for idx, entry in enumerate(summarized_context, start=1):
-            entry['entry_number'] = idx
-            
-        return summarized_context
 
-    async def get_gemini_response(self, prompt: str, summarized_context: Optional[List[Dict[str, Any]]] = None, 
+
+    async def get_gemini_response(self, prompt: str, key_context_data: Optional[List[Dict[str, Any]]] = None, 
                                 last_conversations: Optional[List[Dict[str, Any]]] = None, 
                                 context_conversations: Optional[List[Dict[str, Any]]] = None, 
                                 max_items: int = 10) -> Dict[str, Any]:
         """
-        Sends the prompt and summarized context to Gemini and gets the response.
+        Sends the prompt and key context data to Gemini and gets the response.
         """
         try:
             # Use provided parameters or defaults
             if last_conversations is None:
                 last_conversations = []
-            if summarized_context is None:
-                summarized_context = []
+            if key_context_data is None:
+                key_context_data = []
 
             # Build fixed context
             fixed_context = self._build_fixed_context(max_items)
@@ -91,13 +41,13 @@ class GeminiService(GeminiServiceInterface):
                 types.Content(role="user", parts=[types.Part.from_text(text=fixed_context)]),
             ]
 
-            # Add summarized context if available
-            if summarized_context:
-                summary_text = "Summarized context of previous important interactions:\n" + "\n".join(
+            # Add key context data if available
+            if key_context_data:
+                summary_text = "Key context from previous important interactions:\n" + "\n".join(
                     f"[{c.get('timestamp', '')} | priority: {c.get('context_priority', '')}] {c['relevant_info']}" 
-                    for c in summarized_context
+                    for c in key_context_data
                 )
-                logger.debug(f"[GeminiService] Summarized context string sent to Gemini: {summary_text}")
+                logger.debug(f"[GeminiService] Key context string sent to Gemini: {summary_text}")
                 contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"[CONTEXT SUMMARY]\n{summary_text}")]))
 
             # Add conversational context if available
@@ -117,7 +67,7 @@ class GeminiService(GeminiServiceInterface):
             contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"User Request: {prompt}")]))
 
             logger.debug(f"Prompt to Gemini: {prompt}")
-            logger.debug(f"Summarized context sent to Gemini: {summarized_context}")
+            logger.debug(f"Key context sent to Gemini: {key_context_data}")
 
             # Generate response
             response_schema = self._build_response_schema()
@@ -151,9 +101,9 @@ class GeminiService(GeminiServiceInterface):
             "You are a virtual assistant. Your responses must be structured as a JSON object with the following fields, matching exactly the provided schema and field names. Do not invent or omit fields.\n"
             "- Be a bit more personal and friendly. If you know the user's name, use it naturally in your responses.\n"
             "- When setting the context_priority for an interaction, start with low numbers for new facts.\n"
-            f"- The summarized context (long-term memory) can hold up to {max_items} entries. Do not repeat information: each entry must be unique and not duplicate the 'relevant_info' of any other entry. If you see that an important entry is about to be replaced by a less important one, INCREASE the priority of the important entry so it is not lost. If you want to explicitly remove or replace an entry, set its priority to 0.\n"
-            "- Each entry in the summarized context is numbered. In your structured response, you can reference the entry number(s) you want to update or remove in a dedicated field (for example, 'context_updates').\n"
-            "- IMPORTANT: Do not simply repeat or re-assert facts already present in the summarized context (such as the user's name) as the most relevant information for new interactions. Only add or highlight new facts if they are truly relevant to the current user request. Focus your response and context updates on the user's actual intent and new information, not on repeating existing context.\n"
+            f"- The key context (long-term memory) can hold up to {max_items} entries. Do not repeat information: each entry must be unique and not duplicate the 'relevant_info' of any other entry. If you see that an important entry is about to be replaced by a less important one, INCREASE the priority of the important entry so it is not lost. If you want to explicitly remove or replace an entry, set its priority to 0.\n"
+            "- Each entry in the key context is numbered. In your structured response, you can reference the entry number(s) you want to update or remove in a dedicated field (for example, 'context_updates').\n"
+            "- IMPORTANT: Do not simply repeat or re-assert facts already present in the key context (such as the user's name) as the most relevant information for new interactions. Only add or highlight new facts if they are truly relevant to the current user request. Focus your response and context updates on the user's actual intent and new information, not on repeating existing context.\n"
             "- If the user says 'no', 'no thanks', 'that's all', 'nothing else', or any clear negative/ending phrase, you must set 'app_params': [{{'question': false }}] and do NOT ask if they need anything else or offer further help. End the conversation politely and do not prompt for more input.\n"
             "- 'server_reply' (string, required): The direct answer to the user, in plain text, concise, and without any prefix or special characters. If you do not have a skill available to fulfill the user's request, you must answer directly in 'server_reply' and never reference or wait for a skill.\n"
             "    - If you do not have access to real data, respond with plausible examples and never say you are waiting, searching, or consulting anything.\n"
@@ -168,7 +118,7 @@ class GeminiService(GeminiServiceInterface):
             "    - 'relevant_for_context' (boolean): Whether this interaction is important for long-term context. Use this for information that should be remembered across sessions, such as the user's name, preferences, or other key facts.\n"
             "    - 'context_priority' (integer, 1-100): Priority of this interaction for context retention.\n"
             "    - 'relevant_info' (string): A concise, factual, and contextually useful summary of the most important information about the user or their preferences, written as a fact about the user (e.g., 'The user likes action movies', 'The user's name is Ana', 'The user prefers vegetarian food'). This field should always be filled with the most relevant new fact or preference learned from the interaction, if any. If no new relevant fact is learned, repeat the last most important one.\n"
-            "- 'context_updates' (array of objects, optional): Use this field to reference and update summarized context entries by their number, for example to increase their priority if an important entry is about to be replaced.\n"
+            "- 'context_updates' (array of objects, optional): Use this field to reference and update key context entries by their number, for example to increase their priority if an important entry is about to be replaced.\n"
             "You will be provided with the available skills, their parameters, and the exact structure to use. Always fill out the fields exactly as specified. If there is no skill available for the user's request, always answer directly in 'server_reply' and do not reference skills. Do not use phrases like 'As a language model' or 'I am an AI'. Do not include disclaimers, apologies, or repeat the question. Only return the JSON object as specified."
         )
 

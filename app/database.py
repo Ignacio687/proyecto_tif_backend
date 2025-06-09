@@ -4,7 +4,7 @@ Database initialization and configuration
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.config import settings
-from app.models.entities import User, Conversation, SummarizedContext
+from app.models.entities import User, Conversation, KeyContext
 from app.logger import logger
 
 
@@ -25,7 +25,7 @@ class DatabaseManager:
             # Initialize Beanie with all document models
             await init_beanie(
                 database=self.database,
-                document_models=[User, Conversation, SummarizedContext]
+                document_models=[User, Conversation, KeyContext]
             )
             
             logger.info(f"Database connection established to {settings.MONGODB_DB}")

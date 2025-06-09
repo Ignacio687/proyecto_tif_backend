@@ -15,13 +15,12 @@ app/
 │   └── assistant_controller.py # Assistant interaction endpoints
 ├── models/                 # Data Models
 │   ├── entities.py            # Database entities (Beanie ODM)
-│   ├── dtos.py               # Data Transfer Objects
-│   └── request_response.py   # Legacy models (to be deprecated)
+│   └── dtos.py               # Data Transfer Objects
 ├── repositories/           # Data Access Layer
 │   ├── interfaces.py         # Repository interfaces
 │   ├── user_repository.py    # User data operations
 │   ├── conversation_repository.py # Conversation data operations
-│   └── summarized_context_repository.py # Context data operations
+│   └── key_context_repository.py # Key context data operations
 ├── services/              # Business Logic Layer
 │   ├── interfaces.py         # Service interfaces
 │   ├── auth_service.py       # Authentication business logic

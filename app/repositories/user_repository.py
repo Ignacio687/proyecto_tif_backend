@@ -61,3 +61,19 @@ class UserRepository(UserRepositoryInterface):
         except Exception as e:
             logger.error(f"Error updating user {user.id}: {e}")
             raise
+    
+    async def get_by_username(self, username: str) -> Optional[User]:
+        """Get user by username"""
+        try:
+            return await User.find_one(User.username == username)
+        except Exception as e:
+            logger.error(f"Error getting user by username {username}: {e}")
+            return None
+    
+    async def get_by_verification_token(self, token: str) -> Optional[User]:
+        """Get user by verification token"""
+        try:
+            return await User.find_one(User.verification_token == token)
+        except Exception as e:
+            logger.error(f"Error getting user by verification token: {e}")
+            return None

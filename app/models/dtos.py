@@ -1,7 +1,7 @@
 """
 Data Transfer Objects (DTOs) for API requests and responses
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -19,6 +19,36 @@ class UserRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     """DTO for Google OAuth authentication requests"""
     token: str = Field(description="Google OAuth ID token")
+
+
+class EmailRegisterRequest(BaseModel):
+    """DTO for email registration requests"""
+    email: EmailStr = Field(description="User email address")
+    username: str = Field(min_length=3, max_length=50, description="Username")
+    password: str = Field(min_length=8, description="User password")
+    name: Optional[str] = Field(None, max_length=100, description="User full name")
+
+
+class EmailLoginRequest(BaseModel):
+    """DTO for email login requests"""
+    email_or_username: str = Field(description="Email address or username")
+    password: str = Field(description="User password")
+
+
+class EmailVerificationRequest(BaseModel):
+    """DTO for email verification requests"""
+    token: str = Field(description="Email verification token")
+
+
+class PasswordResetRequest(BaseModel):
+    """DTO for password reset requests"""
+    email: EmailStr = Field(description="User email address")
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    """DTO for password reset confirmation"""
+    token: str = Field(description="Password reset token")
+    new_password: str = Field(min_length=8, description="New password")
 
 
 class Skill(BaseModel):
@@ -42,13 +72,7 @@ class AuthResponse(BaseModel):
     user_id: str = Field(description="User ID")
     email: str = Field(description="User email")
     name: Optional[str] = Field(None, description="User name")
-
-
-class SummarizedInteraction(BaseModel):
-    """DTO for summarized interactions"""
-    interaction_syntax: str = Field(description="Summary of the interaction")
-    timestamp: datetime = Field(default_factory=utc_now, description="Timestamp of the summarized interaction")
-    context_priority: int = Field(description="Priority of this interaction for context retention (1-100)")
+    is_verified: bool = Field(description="Whether email is verified")
 
 
 class ConversationHistory(BaseModel):

@@ -16,6 +16,21 @@ class AuthServiceInterface(ABC):
         pass
     
     @abstractmethod
+    async def register_with_email(self, email: str, username: str, password: str, name: Optional[str] = None) -> Dict[str, Any]:
+        """Register user with email and username"""
+        pass
+    
+    @abstractmethod
+    async def authenticate_email_login(self, email_or_username: str, password: str) -> AuthResponse:
+        """Authenticate user with email/username and password"""
+        pass
+    
+    @abstractmethod
+    async def verify_email(self, token: str) -> Dict[str, Any]:
+        """Verify user's email with verification token"""
+        pass
+    
+    @abstractmethod
     async def create_jwt_token(self, user: User) -> str:
         """Create JWT token for user"""
         pass
@@ -44,17 +59,9 @@ class GeminiServiceInterface(ABC):
     """Interface for Gemini AI service"""
     
     @abstractmethod
-    async def get_gemini_response(self, prompt: str, summarized_context: Optional[List[Dict[str, Any]]] = None, 
+    async def get_gemini_response(self, prompt: str, key_context_data: Optional[List[Dict[str, Any]]] = None, 
                                 last_conversations: Optional[List[Dict[str, Any]]] = None, 
                                 context_conversations: Optional[List[Dict[str, Any]]] = None, 
                                 max_items: int = 10) -> Dict[str, Any]:
         """Get response from Gemini AI"""
-        pass
-    
-    @abstractmethod
-    def build_and_update_summarized_context(self, summarized_context: List[Dict[str, Any]], 
-                                           new_interaction: Optional[Dict[str, Any]] = None, 
-                                           max_items: int = 10, 
-                                           context_updates: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-        """Build and update summarized context"""
         pass

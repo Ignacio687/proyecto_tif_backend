@@ -3,7 +3,7 @@ Base repository interface for data access operations
 """
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
-from app.models.entities import User, Conversation, SummarizedContext
+from app.models.entities import User, Conversation, KeyContext
 
 
 class BaseRepository(ABC):
@@ -39,8 +39,18 @@ class UserRepositoryInterface(ABC):
         pass
     
     @abstractmethod
+    async def get_by_username(self, username: str) -> Optional[User]:
+        """Get user by username"""
+        pass
+    
+    @abstractmethod
     async def get_by_google_id(self, google_id: str) -> Optional[User]:
         """Get user by Google ID"""
+        pass
+    
+    @abstractmethod
+    async def get_by_verification_token(self, token: str) -> Optional[User]:
+        """Get user by verification token"""
         pass
     
     @abstractmethod
@@ -69,15 +79,25 @@ class ConversationRepositoryInterface(ABC):
         pass
 
 
-class SummarizedContextRepositoryInterface(ABC):
-    """Interface for summarized context repository operations"""
+class KeyContextRepositoryInterface(ABC):
+    """Interface for key context repository operations"""
     
     @abstractmethod
-    async def get_user_context(self, user_id: str) -> Optional[SummarizedContext]:
-        """Get user's summarized context"""
+    async def get_user_key_contexts(self, user_id: str, limit: int = 10) -> List[KeyContext]:
+        """Get user's key contexts"""
         pass
     
     @abstractmethod
-    async def save_user_context(self, user_id: str, context_data: List[Dict[str, Any]]) -> SummarizedContext:
-        """Save or update user's summarized context"""
+    async def get_user_key_context_data(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get user's key context data as dict list"""
+        pass
+    
+    @abstractmethod
+    async def save_user_key_context(self, user_id: str, relevant_info: str, context_priority: int = 1) -> None:
+        """Save a single new key context entry"""
+        pass
+    
+    @abstractmethod
+    async def update_key_context_priority(self, user_id: str, context_id: str, new_priority: int) -> bool:
+        """Update priority of a specific key context entry by ID"""
         pass

@@ -5,7 +5,6 @@ from beanie import Document
 from pydantic import Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
-from app.models.dtos import SummarizedInteraction
 
 
 def utc_now() -> datetime:
@@ -16,7 +15,14 @@ def utc_now() -> datetime:
 class User(Document):
     """User entity representing registered users"""
     email: str = Field(description="User email address")
+    # Google OAuth fields
     google_id: Optional[str] = Field(None, description="Google OAuth ID")
+    # Email/username auth fields
+    username: Optional[str] = Field(None, description="Username for email auth")
+    password_hash: Optional[str] = Field(None, description="Hashed password for email auth")
+    is_verified: bool = Field(default=False, description="Whether email is verified")
+    verification_token: Optional[str] = Field(None, description="Email verification token")
+    # Common fields
     name: Optional[str] = Field(None, description="User full name")
     picture: Optional[str] = Field(None, description="User profile picture URL")
     created_at: datetime = Field(default_factory=utc_now, description="Account creation timestamp")
@@ -25,7 +31,7 @@ class User(Document):
 
     class Settings:
         name = "users"
-        indexes = ["email", "google_id"]
+        indexes = ["email", "google_id", "username"]
 
 
 class Conversation(Document):
@@ -41,13 +47,15 @@ class Conversation(Document):
         indexes = ["user_id", "timestamp"]
 
 
-class SummarizedContext(Document):
-    """Summarized context entity for storing user's long-term memory"""
+class KeyContext(Document):
+    """Key context entity for storing individual context information pieces"""
     user_id: str = Field(description="ID of the user this context belongs to")
-    interactions: List[SummarizedInteraction] = Field(default_factory=list, description="List of summarized interactions")
+    relevant_info: str = Field(description="Key information about the user")
+    context_priority: int = Field(description="Priority of this context for retention (1-100)")
+    entry_number: Optional[int] = Field(None, description="Entry number for ordering")
     created_at: datetime = Field(default_factory=utc_now, description="Context creation timestamp")
     updated_at: datetime = Field(default_factory=utc_now, description="Last context update timestamp")
 
     class Settings:
-        name = "summarized_contexts"
-        indexes = ["user_id"]
+        name = "key_contexts"
+        indexes = ["user_id", "context_priority"]

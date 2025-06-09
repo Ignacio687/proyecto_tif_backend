@@ -2,6 +2,8 @@
 Authentication service implementation
 """
 import jwt
+import secrets
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from google.auth.transport import requests
@@ -11,6 +13,7 @@ from app.models.entities import User
 from app.models.dtos import AuthResponse
 from app.repositories.user_repository import UserRepository
 from app.services.interfaces import AuthServiceInterface
+from app.services.email_service import EmailService
 from app.logger import logger
 
 
@@ -24,6 +27,7 @@ class AuthService(AuthServiceInterface):
     
     def __init__(self):
         self.user_repository = UserRepository()
+        self.email_service = EmailService()
         self.jwt_secret = settings.JWT_SECRET
         self.jwt_algorithm = settings.JWT_ALGORITHM
         self.jwt_expiration = settings.JWT_EXPIRATION_HOURS
@@ -80,7 +84,8 @@ class AuthService(AuthServiceInterface):
                 token_type="bearer",
                 user_id=str(user.id),
                 email=user.email,
-                name=user.name
+                name=user.name,
+                is_verified=True  # Google users are automatically verified
             )
             
         except Exception as e:
@@ -115,3 +120,144 @@ class AuthService(AuthServiceInterface):
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid JWT token: {e}")
             return None
+    
+    async def register_with_email(self, email: str, username: str, password: str, name: Optional[str] = None) -> Dict[str, Any]:
+        """Register user with email and username"""
+        try:
+            # Check if email already exists
+            existing_user = await self.user_repository.get_by_email(email)
+            if existing_user:
+                raise ValueError("Email already registered")
+            
+            # Check if username already exists
+            existing_username = await self.user_repository.get_by_username(username)
+            if existing_username:
+                raise ValueError("Username already taken")
+            
+            # Hash password
+            password_hash = self._hash_password(password)
+            
+            # Generate verification token
+            verification_token = secrets.token_urlsafe(32)
+            
+            # Create user data
+            user_data = {
+                'email': email,
+                'username': username,
+                'password_hash': password_hash,
+                'verification_token': verification_token,
+                'name': name,
+                'is_verified': False,
+                'is_active': True,
+                'created_at': utc_now(),
+                'updated_at': utc_now()
+            }
+            
+            # Create user
+            user = await self.user_repository.create_user(user_data)
+            
+            # Send verification email
+            email_sent = await self.email_service.send_verification_email(email, verification_token)
+            if not email_sent:
+                logger.warning(f"Failed to send verification email to {email}")
+            
+            return {
+                'user_id': str(user.id),
+                'email': user.email
+            }
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error registering user with email {email}: {e}")
+            raise ValueError("Registration failed")
+    
+    async def authenticate_email_login(self, email_or_username: str, password: str) -> AuthResponse:
+        """Authenticate user with email/username and password"""
+        try:
+            # Find user by email or username
+            user = await self.user_repository.get_by_email(email_or_username)
+            if not user:
+                user = await self.user_repository.get_by_username(email_or_username)
+            
+            if not user:
+                raise ValueError("Invalid credentials")
+            
+            # Check if user registered with email (has password)
+            if not user.password_hash:
+                raise ValueError("Please use Google login for this account")
+            
+            # Verify password
+            if not self._verify_password(password, user.password_hash):
+                raise ValueError("Invalid credentials")
+            
+            # Check if email is verified
+            if not user.is_verified:
+                raise ValueError("Please verify your email before logging in")
+            
+            # Check if account is active
+            if not user.is_active:
+                raise ValueError("Account is deactivated")
+            
+            # Generate JWT token
+            access_token = await self.create_jwt_token(user)
+            
+            return AuthResponse(
+                access_token=access_token,
+                token_type="bearer",
+                user_id=str(user.id),
+                email=user.email,
+                name=user.name,
+                is_verified=user.is_verified
+            )
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error authenticating email login for {email_or_username}: {e}")
+            raise ValueError("Authentication failed")
+    
+    async def verify_email(self, token: str) -> Dict[str, Any]:
+        """Verify user's email with verification token"""
+        try:
+            # Find user by verification token
+            user = await self.user_repository.get_by_verification_token(token)
+            if not user:
+                raise ValueError("Invalid or expired verification token")
+            
+            # Check if already verified
+            if user.is_verified:
+                raise ValueError("Email already verified")
+            
+            # Update user as verified
+            user.is_verified = True
+            user.verification_token = None  # Clear the token
+            user.updated_at = utc_now()
+            
+            await self.user_repository.update_user(user)
+            
+            return {
+                'email': user.email,
+                'verified': True
+            }
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error verifying email with token: {e}")
+            raise ValueError("Email verification failed")
+    
+    def _hash_password(self, password: str) -> str:
+        """Hash password using SHA-256 with salt"""
+        salt = secrets.token_hex(16)
+        password_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+        return f"{salt}${password_hash.hex()}"
+    
+    def _verify_password(self, password: str, password_hash: str) -> bool:
+        """Verify password against hash"""
+        try:
+            salt, stored_hash = password_hash.split('$')
+            password_hash_check = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+            return stored_hash == password_hash_check.hex()
+        except Exception:
+            return False
