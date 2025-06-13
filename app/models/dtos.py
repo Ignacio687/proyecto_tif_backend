@@ -37,7 +37,7 @@ class EmailLoginRequest(BaseModel):
 
 class EmailVerificationRequest(BaseModel):
     """DTO for email verification requests"""
-    token: str = Field(description="Email verification token")
+    code: str = Field(min_length=6, max_length=8, description="Email verification code")
 
 
 class PasswordResetRequest(BaseModel):
@@ -47,8 +47,13 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetConfirmRequest(BaseModel):
     """DTO for password reset confirmation"""
-    token: str = Field(description="Password reset token")
+    code: str = Field(min_length=6, max_length=8, description="Password reset code")
     new_password: str = Field(min_length=8, description="New password")
+
+
+class ResendVerificationRequest(BaseModel):
+    """DTO for resending verification code"""
+    email: EmailStr = Field(description="User email address")
 
 
 class Skill(BaseModel):

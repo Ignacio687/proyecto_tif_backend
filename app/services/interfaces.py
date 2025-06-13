@@ -26,8 +26,23 @@ class AuthServiceInterface(ABC):
         pass
     
     @abstractmethod
-    async def verify_email(self, token: str) -> Dict[str, Any]:
-        """Verify user's email with verification token"""
+    async def verify_email(self, code: str) -> Dict[str, Any]:
+        """Verify user's email with verification code"""
+        pass
+    
+    @abstractmethod
+    async def resend_verification_code(self, email: str) -> Dict[str, Any]:
+        """Resend verification code to user's email"""
+        pass
+    
+    @abstractmethod
+    async def request_password_reset(self, email: str) -> Dict[str, Any]:
+        """Request password reset for user"""
+        pass
+    
+    @abstractmethod
+    async def confirm_password_reset(self, code: str, new_password: str) -> Dict[str, Any]:
+        """Confirm password reset with code and new password"""
         pass
     
     @abstractmethod

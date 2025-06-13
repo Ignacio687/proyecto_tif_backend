@@ -19,27 +19,28 @@ class EmailService:
         self.smtp_password = settings.SMTP_PASSWORD
         self.from_email = settings.FROM_EMAIL or settings.SMTP_USERNAME
     
-    async def send_verification_email(self, to_email: str, verification_token: str) -> bool:
-        """Send email verification email"""
+    async def send_verification_email(self, to_email: str, verification_code: str) -> bool:
+        """Send email verification email with code"""
         try:
             if not self.smtp_username or not self.smtp_password:
                 logger.warning("SMTP credentials not configured. Email verification disabled.")
                 return True  # Return True in development to avoid blocking
             
-            subject = "Verify your email address"
-            verification_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
+            subject = "Verify your email address - AICompanion"
             
             body = f"""
             <html>
             <body>
                 <h2>Welcome to AICompanion!</h2>
-                <p>Please click the link below to verify your email address:</p>
-                <p><a href="{verification_url}">Verify Email Address</a></p>
-                <p>If the link doesn't work, copy and paste this URL into your browser:</p>
-                <p>{verification_url}</p>
-                <p>This link will expire in 24 hours.</p>
+                <p>Please use the following verification code to verify your email address:</p>
+                <div style="background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px;">
+                    <h1 style="font-size: 32px; color: #2196F3; letter-spacing: 5px; margin: 0;">{verification_code}</h1>
+                </div>
+                <p>Enter this code in the app to complete your email verification.</p>
+                <p><strong>This code will expire in 30 minutes.</strong></p>
                 <br>
                 <p>If you didn't create an account, please ignore this email.</p>
+                <p style="color: #666; font-size: 12px;">For security reasons, do not share this code with anyone.</p>
             </body>
             </html>
             """
@@ -48,6 +49,39 @@ class EmailService:
             
         except Exception as e:
             logger.error(f"Error sending verification email to {to_email}: {e}")
+            return False
+    
+    async def send_password_reset_email(self, to_email: str, reset_code: str) -> bool:
+        """Send password reset email with code"""
+        try:
+            if not self.smtp_username or not self.smtp_password:
+                logger.warning("SMTP credentials not configured. Password reset email disabled.")
+                return True  # Return True in development to avoid blocking
+            
+            subject = "Reset your password - AICompanion"
+            
+            body = f"""
+            <html>
+            <body>
+                <h2>Password Reset Request</h2>
+                <p>You requested to reset your password for AICompanion.</p>
+                <p>Please use the following code to reset your password:</p>
+                <div style="background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px;">
+                    <h1 style="font-size: 32px; color: #FF5722; letter-spacing: 5px; margin: 0;">{reset_code}</h1>
+                </div>
+                <p>Enter this code in the app along with your new password.</p>
+                <p><strong>This code will expire in 30 minutes.</strong></p>
+                <br>
+                <p>If you didn't request a password reset, please ignore this email.</p>
+                <p style="color: #666; font-size: 12px;">For security reasons, do not share this code with anyone.</p>
+            </body>
+            </html>
+            """
+            
+            return await self._send_email(to_email, subject, body, is_html=True)
+            
+        except Exception as e:
+            logger.error(f"Error sending password reset email to {to_email}: {e}")
             return False
     
     async def _send_email(self, to_email: str, subject: str, body: str, is_html: bool = False) -> bool:

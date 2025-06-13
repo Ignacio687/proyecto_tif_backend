@@ -25,7 +25,6 @@ class Settings:
     SMTP_USERNAME: str = os.environ.get("SMTP_USERNAME", "")
     SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD", "")
     FROM_EMAIL: str = os.environ.get("FROM_EMAIL", "")
-    FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     
     # Application settings
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")

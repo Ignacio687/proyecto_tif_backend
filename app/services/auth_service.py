@@ -137,15 +137,17 @@ class AuthService(AuthServiceInterface):
             # Hash password
             password_hash = self._hash_password(password)
             
-            # Generate verification token
-            verification_token = secrets.token_urlsafe(32)
+            # Generate short verification code (6 alphanumeric characters)
+            verification_code = self._generate_verification_code()
+            verification_code_expires = utc_now() + timedelta(minutes=30)
             
             # Create user data
             user_data = {
                 'email': email,
                 'username': username,
                 'password_hash': password_hash,
-                'verification_token': verification_token,
+                'verification_code': verification_code,
+                'verification_code_expires': verification_code_expires,
                 'name': name,
                 'is_verified': False,
                 'is_active': True,
@@ -157,7 +159,7 @@ class AuthService(AuthServiceInterface):
             user = await self.user_repository.create_user(user_data)
             
             # Send verification email
-            email_sent = await self.email_service.send_verification_email(email, verification_token)
+            email_sent = await self.email_service.send_verification_email(email, verification_code)
             if not email_sent:
                 logger.warning(f"Failed to send verification email to {email}")
             
@@ -217,13 +219,17 @@ class AuthService(AuthServiceInterface):
             logger.error(f"Error authenticating email login for {email_or_username}: {e}")
             raise ValueError("Authentication failed")
     
-    async def verify_email(self, token: str) -> Dict[str, Any]:
-        """Verify user's email with verification token"""
+    async def verify_email(self, code: str) -> Dict[str, Any]:
+        """Verify user's email with verification code"""
         try:
-            # Find user by verification token
-            user = await self.user_repository.get_by_verification_token(token)
+            # Find user by verification code
+            user = await self.user_repository.get_by_verification_code(code)
             if not user:
-                raise ValueError("Invalid or expired verification token")
+                raise ValueError("Invalid or expired verification code")
+            
+            # Check if code has expired
+            if user.verification_code_expires and user.verification_code_expires < utc_now():
+                raise ValueError("Verification code has expired")
             
             # Check if already verified
             if user.is_verified:
@@ -231,7 +237,8 @@ class AuthService(AuthServiceInterface):
             
             # Update user as verified
             user.is_verified = True
-            user.verification_token = None  # Clear the token
+            user.verification_code = None  # Clear the code
+            user.verification_code_expires = None
             user.updated_at = utc_now()
             
             await self.user_repository.update_user(user)
@@ -244,7 +251,7 @@ class AuthService(AuthServiceInterface):
         except ValueError:
             raise
         except Exception as e:
-            logger.error(f"Error verifying email with token: {e}")
+            logger.error(f"Error verifying email with code: {e}")
             raise ValueError("Email verification failed")
     
     def _hash_password(self, password: str) -> str:
@@ -261,3 +268,116 @@ class AuthService(AuthServiceInterface):
             return stored_hash == password_hash_check.hex()
         except Exception:
             return False
+    
+    def _generate_verification_code(self) -> str:
+        """Generate a 6-character alphanumeric verification code"""
+        return secrets.token_hex(3).upper()  # 6 characters: 0-9 and A-F
+    
+    def _generate_reset_code(self) -> str:
+        """Generate a 6-character alphanumeric reset code"""
+        return secrets.token_hex(3).upper()  # 6 characters: 0-9 and A-F
+
+    async def request_password_reset(self, email: str) -> Dict[str, Any]:
+        """Request password reset for user"""
+        try:
+            # Find user by email
+            user = await self.user_repository.get_by_email(email)
+            if not user:
+                # Don't reveal if email exists or not for security
+                return {"message": "If this email is registered, you will receive a reset code"}
+            
+            # Check if user has password (not Google-only account)
+            if not user.password_hash:
+                return {"message": "This account uses Google login. Please use Google to sign in"}
+            
+            # Generate reset code
+            reset_code = self._generate_reset_code()
+            reset_code_expires = utc_now() + timedelta(minutes=30)
+            
+            # Update user with reset code
+            user.reset_code = reset_code
+            user.reset_code_expires = reset_code_expires
+            user.updated_at = utc_now()
+            
+            await self.user_repository.update_user(user)
+            
+            # Send reset email
+            email_sent = await self.email_service.send_password_reset_email(email, reset_code)
+            if not email_sent:
+                logger.warning(f"Failed to send password reset email to {email}")
+            
+            return {"message": "If this email is registered, you will receive a reset code"}
+            
+        except Exception as e:
+            logger.error(f"Error requesting password reset for {email}: {e}")
+            return {"message": "If this email is registered, you will receive a reset code"}
+    
+    async def confirm_password_reset(self, code: str, new_password: str) -> Dict[str, Any]:
+        """Confirm password reset with code and new password"""
+        try:
+            # Find user by reset code
+            user = await self.user_repository.get_by_reset_code(code)
+            if not user:
+                raise ValueError("Invalid or expired reset code")
+            
+            # Check if code has expired
+            if user.reset_code_expires and user.reset_code_expires < utc_now():
+                raise ValueError("Reset code has expired")
+            
+            # Hash new password
+            new_password_hash = self._hash_password(new_password)
+            
+            # Update user password and clear reset code
+            user.password_hash = new_password_hash
+            user.reset_code = None
+            user.reset_code_expires = None
+            user.updated_at = utc_now()
+            
+            await self.user_repository.update_user(user)
+            
+            return {
+                'email': user.email,
+                'message': 'Password reset successfully'
+            }
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error confirming password reset: {e}")
+            raise ValueError("Password reset failed")
+
+    async def resend_verification_code(self, email: str) -> Dict[str, Any]:
+        """Resend verification code to user email"""
+        try:
+            # Find user by email
+            user = await self.user_repository.get_by_email(email)
+            if not user:
+                return {"message": "If this email is registered, a new verification code will be sent"}
+            
+            # Check if already verified
+            if user.is_verified:
+                raise ValueError("Email is already verified")
+            
+            # Generate new verification code
+            verification_code = self._generate_verification_code()
+            verification_code_expires = utc_now() + timedelta(minutes=30)
+            
+            # Update user with new code
+            user.verification_code = verification_code
+            user.verification_code_expires = verification_code_expires
+            user.updated_at = utc_now()
+            
+            await self.user_repository.update_user(user)
+            
+            # Send verification email
+            email_sent = await self.email_service.send_verification_email(email, verification_code)
+            if not email_sent:
+                logger.warning(f"Failed to resend verification email to {email}")
+            
+            return {"message": "A new verification code has been sent to your email"}
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error resending verification code for {email}: {e}")
+            return {"message": "If this email is registered, a new verification code will be sent"}

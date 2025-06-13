@@ -1,5 +1,5 @@
 """
-Base repository interface for data access operations
+Base repository interface for data access
 """
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
@@ -49,8 +49,13 @@ class UserRepositoryInterface(ABC):
         pass
     
     @abstractmethod
-    async def get_by_verification_token(self, token: str) -> Optional[User]:
-        """Get user by verification token"""
+    async def get_by_verification_code(self, code: str) -> Optional[User]:
+        """Get user by verification code"""
+        pass
+    
+    @abstractmethod
+    async def get_by_reset_code(self, code: str) -> Optional[User]:
+        """Get user by password reset code"""
         pass
     
     @abstractmethod
@@ -58,46 +63,69 @@ class UserRepositoryInterface(ABC):
         """Create a new user"""
         pass
 
+    @abstractmethod
+    async def update_user(self, user: User) -> User:
+        """Update an existing user"""
+        pass
+
 
 class ConversationRepositoryInterface(ABC):
     """Interface for conversation-specific repository operations"""
     
     @abstractmethod
-    async def get_user_conversations(self, user_id: str, limit: int = 10, skip: int = 0) -> List[Conversation]:
-        """Get user's conversations with pagination"""
+    async def get_by_user_id(self, user_id: str, limit: int = 10, offset: int = 0) -> List[Conversation]:
+        """Get conversations by user ID with pagination"""
         pass
     
     @abstractmethod
-    async def get_last_conversations(self, user_id: str, limit: int = 4) -> List[Dict[str, Any]]:
-        """Get user's last conversations"""
+    async def create_conversation(self, conversation_data: Dict[str, Any]) -> Conversation:
+        """Create a new conversation"""
         pass
-    
+
     @abstractmethod
-    async def save_conversation(self, user_id: str, user_input: str, server_reply: str, 
-                              interaction_params: Optional[Dict[str, Any]] = None) -> Conversation:
-        """Save a new conversation"""
+    async def count_by_user_id(self, user_id: str) -> int:
+        """Count conversations by user ID"""
         pass
 
 
 class KeyContextRepositoryInterface(ABC):
-    """Interface for key context repository operations"""
+    """Interface for key context-specific repository operations"""
     
     @abstractmethod
-    async def get_user_key_contexts(self, user_id: str, limit: int = 10) -> List[KeyContext]:
-        """Get user's key contexts"""
+    async def get_by_user_id(self, user_id: str, limit: int = 10) -> List[KeyContext]:
+        """Get key contexts by user ID"""
         pass
     
     @abstractmethod
-    async def get_user_key_context_data(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get user's key context data as dict list"""
+    async def create_key_context(self, context_data: Dict[str, Any]) -> KeyContext:
+        """Create a new key context"""
         pass
+
+    @abstractmethod
+    async def update_key_context(self, context: KeyContext) -> KeyContext:
+        """Update an existing key context"""
+        pass
+
+    @abstractmethod
+    async def delete_by_id(self, context_id: str) -> bool:
+        """Delete a key context by ID"""
+        pass
+
+    @abstractmethod
+    async def delete_by_user_id(self, user_id: str) -> bool:
+        """Delete all key contexts for a user"""
+        pass
+
+
+class MongoRepositoryInterface(ABC):
+    """Interface for MongoDB-specific operations"""
     
     @abstractmethod
-    async def save_user_key_context(self, user_id: str, relevant_info: str, context_priority: int = 1) -> None:
-        """Save a single new key context entry"""
+    async def init_db(self, models: List):
+        """Initialize database with model schemas"""
         pass
-    
+
     @abstractmethod
-    async def update_key_context_priority(self, user_id: str, context_id: str, new_priority: int) -> bool:
-        """Update priority of a specific key context entry by ID"""
+    async def close_db(self):
+        """Close database connection"""
         pass

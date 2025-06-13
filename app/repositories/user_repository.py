@@ -70,10 +70,18 @@ class UserRepository(UserRepositoryInterface):
             logger.error(f"Error getting user by username {username}: {e}")
             return None
     
-    async def get_by_verification_token(self, token: str) -> Optional[User]:
-        """Get user by verification token"""
+    async def get_by_verification_code(self, code: str) -> Optional[User]:
+        """Get user by verification code"""
         try:
-            return await User.find_one(User.verification_token == token)
+            return await User.find_one(User.verification_code == code)
         except Exception as e:
-            logger.error(f"Error getting user by verification token: {e}")
+            logger.error(f"Error getting user by verification code: {e}")
+            return None
+    
+    async def get_by_reset_code(self, code: str) -> Optional[User]:
+        """Get user by password reset code"""
+        try:
+            return await User.find_one(User.reset_code == code)
+        except Exception as e:
+            logger.error(f"Error getting user by reset code: {e}")
             return None

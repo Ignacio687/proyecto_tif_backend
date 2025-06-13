@@ -5,7 +5,8 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.dtos import (
     GoogleAuthRequest, AuthResponse, EmailRegisterRequest, 
-    EmailLoginRequest, EmailVerificationRequest
+    EmailLoginRequest, EmailVerificationRequest, PasswordResetRequest,
+    PasswordResetConfirmRequest, ResendVerificationRequest
 )
 from app.services.auth_service import AuthService
 from app.dependencies import get_auth_service
@@ -142,10 +143,10 @@ async def verify_email(
     auth_service: AuthService = Depends(get_auth_service)
 ):
     """
-    Verify user's email address with verification token
+    Verify user's email address with verification code
     """
     try:
-        result = await auth_service.verify_email(request.token)
+        result = await auth_service.verify_email(request.code)
         logger.info(f"Email verified successfully for user: {result.get('email')}")
         return {
             "message": "Email verified successfully. You can now log in.",
@@ -163,6 +164,81 @@ async def verify_email(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Email verification service error"
+        )
+
+@router.post("/resend-verification", response_model=dict)
+async def resend_verification_code(
+    request: ResendVerificationRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Resend verification code to user's email
+    """
+    try:
+        result = await auth_service.resend_verification_code(request.email)
+        logger.info(f"Verification code resent to: {request.email}")
+        return result
+    except ValueError as e:
+        logger.warning(f"Resend verification failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error resending verification code: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Resend verification service error"
+        )
+
+@router.post("/request-password-reset", response_model=dict)
+async def request_password_reset(
+    request: PasswordResetRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Request password reset by sending reset code to email
+    """
+    try:
+        result = await auth_service.request_password_reset(request.email)
+        logger.info(f"Password reset requested for: {request.email}")
+        return result
+    except Exception as e:
+        logger.error(f"Error requesting password reset: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset request failed"
+        )
+
+@router.post("/confirm-password-reset", response_model=dict)
+async def confirm_password_reset(
+    request: PasswordResetConfirmRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Confirm password reset with code and new password
+    """
+    try:
+        result = await auth_service.confirm_password_reset(request.code, request.new_password)
+        logger.info(f"Password reset confirmed for user: {result.get('email')}")
+        return {
+            "message": "Password reset successfully. You can now log in with your new password.",
+            "success": True
+        }
+    except ValueError as e:
+        logger.warning(f"Password reset confirmation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error confirming password reset: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset confirmation failed"
         )
 
 # Dependency for getting current user from JWT token

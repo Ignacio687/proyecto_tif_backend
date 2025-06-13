@@ -21,7 +21,11 @@ class User(Document):
     username: Optional[str] = Field(None, description="Username for email auth")
     password_hash: Optional[str] = Field(None, description="Hashed password for email auth")
     is_verified: bool = Field(default=False, description="Whether email is verified")
-    verification_token: Optional[str] = Field(None, description="Email verification token")
+    verification_code: Optional[str] = Field(None, description="Email verification code (6-8 chars)")
+    verification_code_expires: Optional[datetime] = Field(None, description="Verification code expiration")
+    # Password reset fields
+    reset_code: Optional[str] = Field(None, description="Password reset code (6-8 chars)")
+    reset_code_expires: Optional[datetime] = Field(None, description="Reset code expiration")
     # Common fields
     name: Optional[str] = Field(None, description="User full name")
     picture: Optional[str] = Field(None, description="User profile picture URL")
