@@ -52,6 +52,7 @@ class KeyContextRepository(KeyContextRepositoryInterface):
                 user_id=user_id,
                 relevant_info=relevant_info,
                 context_priority=context_priority,
+                entry_number=None,  # Will be set dynamically when needed
                 created_at=utc_now(),
                 updated_at=utc_now()
             )
