@@ -228,8 +228,15 @@ class AuthService(AuthServiceInterface):
                 raise ValueError("Invalid or expired verification code")
             
             # Check if code has expired
-            if user.verification_code_expires and user.verification_code_expires < utc_now():
-                raise ValueError("Verification code has expired")
+            if user.verification_code_expires:
+                # Ensure both datetimes are timezone-aware for comparison
+                expires_at = user.verification_code_expires
+                if expires_at.tzinfo is None:
+                    # If the stored datetime is naive, assume it's UTC
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                
+                if expires_at < utc_now():
+                    raise ValueError("Verification code has expired")
             
             # Check if already verified
             if user.is_verified:
@@ -321,8 +328,15 @@ class AuthService(AuthServiceInterface):
                 raise ValueError("Invalid or expired reset code")
             
             # Check if code has expired
-            if user.reset_code_expires and user.reset_code_expires < utc_now():
-                raise ValueError("Reset code has expired")
+            if user.reset_code_expires:
+                # Ensure both datetimes are timezone-aware for comparison
+                expires_at = user.reset_code_expires
+                if expires_at.tzinfo is None:
+                    # If the stored datetime is naive, assume it's UTC
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                
+                if expires_at < utc_now():
+                    raise ValueError("Reset code has expired")
             
             # Hash new password
             new_password_hash = self._hash_password(new_password)
