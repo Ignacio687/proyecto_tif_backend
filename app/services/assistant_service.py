@@ -119,11 +119,9 @@ class AssistantService(AssistantServiceInterface):
             # Convert to dict format for response
             conversation_list = [
                 {
-                    "id": str(conv.id),
                     "user_input": conv.user_input,
                     "server_reply": conv.server_reply,
-                    "timestamp": conv.timestamp,
-                    "interaction_params": conv.interaction_params
+                    "timestamp": conv.timestamp
                 }
                 for conv in conversations
             ]
