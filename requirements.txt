@@ -6,3 +6,10 @@ loguru
 google-genai
 python-dotenv
 beanie
+PyJWT
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+passlib[bcrypt]
+python-multipart
+email-validator
