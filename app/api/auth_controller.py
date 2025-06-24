@@ -6,7 +6,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.dtos import (
     GoogleAuthRequest, AuthResponse, EmailRegisterRequest, 
     EmailLoginRequest, EmailVerificationRequest, PasswordResetRequest,
-    PasswordResetConfirmRequest, ResendVerificationRequest
+    PasswordResetConfirmRequest, ResendVerificationRequest, RefreshTokenRequest
 )
 from app.services.auth_service import AuthService
 from app.dependencies import get_auth_service
@@ -63,6 +63,7 @@ async def verify_token(
         return {
             "user_id": payload.get("user_id"),
             "email": payload.get("email"),
+            "token_type": payload.get("type", "access"),
             "valid": True
         }
     except HTTPException:
@@ -241,6 +242,49 @@ async def confirm_password_reset(
             detail="Password reset confirmation failed"
         )
 
+@router.post("/refresh", response_model=AuthResponse)
+async def refresh_token(
+    request: RefreshTokenRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Refresh access token using refresh token
+    """
+    try:
+        tokens = await auth_service.refresh_access_token(request.refresh_token)
+        
+        # Get user info for the response
+        payload = await auth_service.verify_jwt_token(tokens['access_token'])
+        if not payload:
+            raise ValueError("Failed to verify new access token")
+            
+        user = await auth_service.user_repository.get_by_id(payload['user_id'])
+        if not user:
+            raise ValueError("User not found")
+        
+        return AuthResponse(
+            access_token=tokens['access_token'],
+            refresh_token=tokens['refresh_token'],
+            token_type="bearer",
+            user_id=str(user.id),
+            email=user.email,
+            name=user.name,
+            is_verified=user.is_verified
+        )
+    except ValueError as e:
+        logger.warning(f"Token refresh failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error refreshing token: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh service error"
+        )
+
 # Dependency for getting current user from JWT token
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -256,7 +300,15 @@ async def get_current_user(
         if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
+                detail="Token expired or invalid. Please refresh your token or login again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Ensure it's an access token, not a refresh token
+        if payload.get('type') != 'access':
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type. Please use an access token.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         

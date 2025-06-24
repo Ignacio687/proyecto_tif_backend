@@ -46,13 +46,18 @@ class AuthServiceInterface(ABC):
         pass
     
     @abstractmethod
-    async def create_jwt_token(self, user: User) -> str:
-        """Create JWT token for user"""
+    async def create_token_pair(self, user: User) -> Dict[str, str]:
+        """Create both access and refresh tokens for user"""
         pass
     
     @abstractmethod
     async def verify_jwt_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Verify and decode JWT token"""
+        pass
+    
+    @abstractmethod
+    async def refresh_access_token(self, refresh_token: str) -> Dict[str, str]:
+        """Refresh access token using refresh token"""
         pass
 
 

@@ -14,7 +14,8 @@ class Settings:
     # Authentication settings
     JWT_SECRET: str = os.environ.get("JWT_SECRET", "your-super-secret-jwt-key-change-this-in-production")
     JWT_ALGORITHM: str = os.environ.get("JWT_ALGORITHM", "HS256")
-    JWT_EXPIRATION_HOURS: int = int(os.environ.get("JWT_EXPIRATION_HOURS", "24"))
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = int(os.environ.get("ACCESS_TOKEN_EXPIRE_SECONDS", "3600"))
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str = os.environ.get("GOOGLE_CLIENT_ID", "")

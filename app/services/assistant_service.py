@@ -1,22 +1,30 @@
 """
 Assistant service implementation for handling user interactions
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from app.models.dtos import ServerResponse
-from app.repositories.conversation_repository import ConversationRepository
-from app.repositories.key_context_repository import KeyContextRepository
 from app.services.interfaces import AssistantServiceInterface
-from app.services.gemini_service import GeminiService
 from app.logger import logger
 
 
 class AssistantService(AssistantServiceInterface):
     """Service for handling assistant operations"""
     
-    def __init__(self):
-        self.conversation_repository = ConversationRepository()
-        self.key_context_repository = KeyContextRepository()
-        self.gemini_service = GeminiService()
+    def __init__(self, conversation_repository=None, key_context_repository=None, gemini_service=None):
+        # Use dependency injection to avoid creating new instances each time
+        if conversation_repository is None:
+            from app.repositories.conversation_repository import ConversationRepository
+            conversation_repository = ConversationRepository()
+        if key_context_repository is None:
+            from app.repositories.key_context_repository import KeyContextRepository
+            key_context_repository = KeyContextRepository()
+        if gemini_service is None:
+            from app.services.gemini_service import GeminiService
+            gemini_service = GeminiService()
+            
+        self.conversation_repository = conversation_repository
+        self.key_context_repository = key_context_repository
+        self.gemini_service = gemini_service
     
     async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10) -> ServerResponse:
         """Handle user request and return assistant response"""
