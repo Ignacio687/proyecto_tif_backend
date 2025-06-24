@@ -16,7 +16,7 @@ def utc_now() -> datetime:
 class KeyContextRepository(KeyContextRepositoryInterface):
     """Repository for key context operations"""
     
-    async def get_user_key_contexts(self, user_id: str, limit: int = 10) -> List[KeyContext]:
+    async def get_user_key_contexts(self, user_id: str, limit: int = 30) -> List[KeyContext]:
         """Get user's key contexts ordered by priority"""
         try:
             contexts = await KeyContext.find(
@@ -27,7 +27,7 @@ class KeyContextRepository(KeyContextRepositoryInterface):
             logger.error(f"Error getting key contexts for user {user_id}: {e}")
             return []
     
-    async def get_user_key_context_data(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_user_key_context_data(self, user_id: str, limit: int = 30) -> List[Dict[str, Any]]:
         """Get user's key context data as dict list for compatibility"""
         try:
             contexts = await self.get_user_key_contexts(user_id, limit)

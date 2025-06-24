@@ -37,15 +37,17 @@ app/
 
 ### Authentication
 - **Google OAuth 2.0** integration for user authentication
-- **JWT token** generation and validation for session management
-- User registration and login with Google accounts
+- **JWT access/refresh token** system with configurable lifespans
+- **Email registration and login** with verification codes
+- **Password reset** functionality with secure codes
+- **Token refresh** endpoint for seamless authentication
 - Secure endpoint protection with bearer token authentication
 
 ### AI Assistant
 - **Gemini AI** integration for intelligent conversations
-- **User-specific conversation history** with pagination
+- **User-specific conversation history** with pagination (20 conversations)
 - **Long-term memory** with summarized context for personalized interactions
-- **Context priority management** to maintain relevant information
+- **Context priority management** to maintain relevant information (30 contexts max)
 
 ### Data Management
 - **MongoDB** with Beanie ODM for async operations
@@ -75,7 +77,8 @@ GEMINI_API_KEY=your_gemini_api_key_here
 # Authentication
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_ALGORITHM=HS256
-JWT_EXPIRATION_HOURS=24
+ACCESS_TOKEN_EXPIRE_SECONDS=3600
+REFRESH_TOKEN_EXPIRE_DAYS=7
 
 # Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id_here
@@ -119,7 +122,14 @@ Once the server is running, visit:
 
 #### Authentication
 - `POST /api/v1/auth/google` - Authenticate with Google OAuth token
+- `POST /api/v1/auth/register` - Register with email and username
+- `POST /api/v1/auth/login` - Login with email/username and password
+- `POST /api/v1/auth/refresh` - Refresh access token using refresh token
 - `POST /api/v1/auth/verify-token` - Verify JWT token
+- `POST /api/v1/auth/verify-email` - Verify email with code
+- `POST /api/v1/auth/resend-verification` - Resend verification code
+- `POST /api/v1/auth/request-password-reset` - Request password reset
+- `POST /api/v1/auth/confirm-password-reset` - Confirm password reset
 
 #### Assistant
 - `POST /api/v1/assistant` - Send message to assistant (requires authentication)
@@ -128,7 +138,7 @@ Once the server is running, visit:
 ## 🏗️ Architecture Patterns
 
 ### Dependency Injection
-The application uses a dependency injection container (`app/dependencies.py`) to manage service instances and their dependencies. This promotes loose coupling and makes testing easier.
+The application uses a dependency injection container (`app/dependencies.py`) to manage service instances and their dependencies. This promotes loose coupling, makes testing easier, and ensures singleton behavior for database connections.
 
 ### Repository Pattern
 Data access is abstracted through repository interfaces, making it easy to swap data sources or add caching layers without changing business logic.
@@ -141,21 +151,26 @@ Clear separation between internal data models (entities) and external API contra
 
 ## 🔐 Security Features
 
-- **JWT Authentication** with configurable expiration
+- **JWT Access/Refresh Token** system with configurable lifespans
+  - Access tokens: 3600 seconds (1 hour) by default
+  - Refresh tokens: 7 days by default
 - **Google OAuth 2.0** integration for secure user authentication
+- **Email verification** for registration security
+- **Password hashing** with PBKDF2-HMAC-SHA256 and salt
 - **User isolation** - all data is user-specific
 - **Input validation** with Pydantic models
 - **Error handling** with sanitized error messages in production
+- **Token type validation** (access vs refresh tokens)
 
 ## 🎯 User-Specific Features
 
 ### Conversation Management
 - Each user has their own conversation history
-- Pagination support for large conversation lists
+- Pagination support for large conversation lists (20 conversations per fetch)
 - Automatic conversation saving with metadata
 
 ### Intelligent Context Management
-- **Long-term memory** through summarized context
+- **Long-term memory** through summarized context (30 contexts max)
 - **Priority-based** context retention (1-100 scale)
 - **Automatic context updates** based on AI recommendations
 - **Context size limits** to maintain performance
@@ -191,6 +206,8 @@ docker run -p 8000:8000 --env-file .env tif-backend
 - **Async/await** pattern for database operations
 - **Error handling** with proper logging
 - **Modular design** with clear separation of concerns
+- **Dependency injection** for better testability and loose coupling
+- **Interface-based architecture** for maintainability
 
 ### Future Enhancements
 - Unit and integration tests

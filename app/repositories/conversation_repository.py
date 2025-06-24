@@ -16,7 +16,7 @@ def utc_now() -> datetime:
 class ConversationRepository(ConversationRepositoryInterface):
     """Repository for conversation operations"""
     
-    async def get_user_conversations(self, user_id: str, limit: int = 10, skip: int = 0) -> List[Conversation]:
+    async def get_user_conversations(self, user_id: str, limit: int = 20, skip: int = 0) -> List[Conversation]:
         """Get user's conversations with pagination"""
         try:
             conversations = await Conversation.find(
@@ -27,7 +27,7 @@ class ConversationRepository(ConversationRepositoryInterface):
             logger.error(f"Error getting conversations for user {user_id}: {e}")
             return []
     
-    async def get_last_conversations(self, user_id: str, limit: int = 4) -> List[Dict[str, Any]]:
+    async def get_last_conversations(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Get user's last conversations"""
         try:
             conversations = await Conversation.find(

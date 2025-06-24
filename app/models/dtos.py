@@ -73,11 +73,17 @@ class ServerResponse(BaseModel):
 class AuthResponse(BaseModel):
     """DTO for authentication responses"""
     access_token: str = Field(description="JWT access token")
+    refresh_token: Optional[str] = Field(None, description="JWT refresh token")
     token_type: str = Field(default="bearer", description="Token type")
     user_id: str = Field(description="User ID")
     email: str = Field(description="User email")
     name: Optional[str] = Field(None, description="User name")
     is_verified: bool = Field(description="Whether email is verified")
+
+
+class RefreshTokenRequest(BaseModel):
+    """DTO for refresh token requests"""
+    refresh_token: str = Field(description="Refresh token")
 
 
 class ConversationHistory(BaseModel):

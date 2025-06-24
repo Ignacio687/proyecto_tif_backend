@@ -25,12 +25,21 @@ def utc_now() -> datetime:
 class AuthService(AuthServiceInterface):
     """Service for handling authentication operations"""
     
-    def __init__(self):
-        self.user_repository = UserRepository()
-        self.email_service = EmailService()
+    def __init__(self, user_repository=None, email_service=None):
+        # Use dependency injection to avoid creating new instances each time
+        if user_repository is None:
+            from app.repositories.user_repository import UserRepository
+            user_repository = UserRepository()
+        if email_service is None:
+            from app.services.email_service import EmailService
+            email_service = EmailService()
+            
+        self.user_repository = user_repository
+        self.email_service = email_service
         self.jwt_secret = settings.JWT_SECRET
         self.jwt_algorithm = settings.JWT_ALGORITHM
-        self.jwt_expiration = settings.JWT_EXPIRATION_HOURS
+        self.access_token_expire_seconds = settings.ACCESS_TOKEN_EXPIRE_SECONDS
+        self.refresh_token_expire_days = settings.REFRESH_TOKEN_EXPIRE_DAYS
     
     async def authenticate_google_token(self, token: str) -> AuthResponse:
         """Authenticate user with Google token"""
@@ -76,11 +85,12 @@ class AuthService(AuthServiceInterface):
                     }
                     user = await self.user_repository.create_user(user_data)
             
-            # Generate JWT token
-            access_token = await self.create_jwt_token(user)
+            # Generate JWT tokens
+            tokens = await self.create_token_pair(user)
             
             return AuthResponse(
-                access_token=access_token,
+                access_token=tokens['access_token'],
+                refresh_token=tokens['refresh_token'],
                 token_type="bearer",
                 user_id=str(user.id),
                 email=user.email,
@@ -92,21 +102,37 @@ class AuthService(AuthServiceInterface):
             logger.error(f"Error authenticating Google token: {e}")
             raise ValueError(f"Authentication failed: {str(e)}")
     
-    async def create_jwt_token(self, user: User) -> str:
-        """Create JWT token for user"""
+    async def create_token_pair(self, user: User) -> Dict[str, str]:
+        """Create both access and refresh tokens for user"""
         try:
-            payload = {
+            # Access token (configurable lifespan)
+            access_payload = {
                 'user_id': str(user.id),
                 'email': user.email,
-                'exp': utc_now() + timedelta(hours=self.jwt_expiration),
+                'type': 'access',
+                'exp': utc_now() + timedelta(seconds=self.access_token_expire_seconds),
                 'iat': utc_now()
             }
             
-            token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-            return token
+            # Refresh token (configurable lifespan)
+            refresh_payload = {
+                'user_id': str(user.id),
+                'email': user.email,
+                'type': 'refresh',
+                'exp': utc_now() + timedelta(days=self.refresh_token_expire_days),
+                'iat': utc_now()
+            }
+            
+            access_token = jwt.encode(access_payload, self.jwt_secret, algorithm=self.jwt_algorithm)
+            refresh_token = jwt.encode(refresh_payload, self.jwt_secret, algorithm=self.jwt_algorithm)
+            
+            return {
+                'access_token': access_token,
+                'refresh_token': refresh_token
+            }
             
         except Exception as e:
-            logger.error(f"Error creating JWT token for user {user.id}: {e}")
+            logger.error(f"Error creating token pair for user {user.id}: {e}")
             raise
     
     async def verify_jwt_token(self, token: str) -> Optional[Dict[str, Any]]:
@@ -201,11 +227,12 @@ class AuthService(AuthServiceInterface):
             if not user.is_active:
                 raise ValueError("Account is deactivated")
             
-            # Generate JWT token
-            access_token = await self.create_jwt_token(user)
+            # Generate JWT tokens
+            tokens = await self.create_token_pair(user)
             
             return AuthResponse(
-                access_token=access_token,
+                access_token=tokens['access_token'],
+                refresh_token=tokens['refresh_token'],
                 token_type="bearer",
                 user_id=str(user.id),
                 email=user.email,
@@ -395,3 +422,33 @@ class AuthService(AuthServiceInterface):
         except Exception as e:
             logger.error(f"Error resending verification code for {email}: {e}")
             return {"message": "If this email is registered, a new verification code will be sent"}
+    
+    async def refresh_access_token(self, refresh_token: str) -> Dict[str, str]:
+        """Refresh access token using refresh token"""
+        try:
+            # Verify refresh token
+            payload = jwt.decode(refresh_token, self.jwt_secret, algorithms=[self.jwt_algorithm])
+            
+            # Check if it's actually a refresh token
+            if payload.get('type') != 'refresh':
+                raise ValueError("Invalid token type")
+            
+            # Get user
+            user_id = payload.get('user_id')
+            user = await self.user_repository.get_by_id(user_id)
+            if not user:
+                raise ValueError("User not found")
+            
+            # Create new token pair
+            tokens = await self.create_token_pair(user)
+            return tokens
+            
+        except jwt.ExpiredSignatureError:
+            logger.warning("Refresh token has expired")
+            raise ValueError("Refresh token expired. Please login again.")
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Invalid refresh token: {e}")
+            raise ValueError("Invalid refresh token")
+        except Exception as e:
+            logger.error(f"Error refreshing token: {e}")
+            raise ValueError("Token refresh failed")
