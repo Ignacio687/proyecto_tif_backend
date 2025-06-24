@@ -113,7 +113,39 @@ class GeminiService(GeminiServiceInterface):
             "    - Do not repeat questions or offer further help if the user has already confirmed or answered affirmatively.\n"
             "    - If the user responds with 'yes' or confirms, proceed to fulfill the request and provide the information, without asking further questions.\n"
             "- 'skills' (array of objects, optional): Skills that the app can perform. Each skill must match exactly the provided list and structure. Do not invent or modify skills or their parameters. If no skill is available for the user's request, do not use this field.\n"
-            "- 'server_skill' (object, optional): A specific skill that the server can fulfill directly. If a server skill is required, only complete this field and leave 'skills' empty. The server will attach the requested information and regenerate the response.\n"
+            "    - ALWAYS use this field for the available skills listed below\n"
+            "    - Put each skill as a separate object in this array\n"
+            "\n"
+            "AVAILABLE SKILLS:\n"
+            "1. Time Query Skill\n"
+            "   - name: 'TimeQuerySkill'\n"
+            "   - action: 'query_time'\n"
+            "   - params: Use 'data' field with JSON string: '{\"timezone\": \"UTC\", \"format\": \"12h\"}'\n"
+            "\n"
+            "2. Weather Information Skill\n"
+            "   - name: 'WeatherSkill'\n"
+            "   - action: 'fetch_weather'\n"
+            "   - params: Use 'data' field with JSON string: '{\"location\": \"City Name\", \"days\": \"3\"}'\n"
+            "\n"
+            "3. Call Contact Skill\n"
+            "   - name: 'CallContactSkill'\n"
+            "   - action: 'call_contact'\n"
+            "   - params: Use 'data' field with JSON string: '{\"contact_name\": \"Contact Name\"}'\n"
+            "\n"
+            "4. Send Message Skill\n"
+            "   - name: 'SendMessageSkill'\n"
+            "   - action: 'send_message'\n"
+            "   - params: Use 'data' field with JSON string: '{\"recipient\": \"Person\", \"message\": \"Text\"}'\n"
+            "\n"
+            "5. Create Reminder Skill\n"
+            "   - name: 'CreateReminderSkill'\n"
+            "   - action: 'create_reminder'\n"
+            "   - params: Use 'data' field with JSON string: '{\"title\": \"Reminder\", \"datetime\": \"2025-01-01 10:00\"}'\n"
+            "\n"
+            "IMPORTANT: For all skills, use the 'data' field in params with a JSON string containing the actual parameters.\n"
+            "Example: {'data': '{\"contact_name\": \"Juan\"}'}\n"
+            "\n"
+            "- 'server_skill' (object, optional): DO NOT USE this field for the skills listed above. This is reserved for future server-side skills that are not yet implemented.\n"
             "- 'interaction_params' (object, required): Parameters for summarizing and prioritizing the interaction.\n"
             "    - 'relevant_for_context' (boolean): Whether this interaction is important for long-term context. Use this for information that should be remembered across sessions, such as the user's name, preferences, or other key facts.\n"
             "    - 'context_priority' (integer, 1-100): Priority of this interaction for context retention.\n"
@@ -147,10 +179,11 @@ class GeminiService(GeminiServiceInterface):
                             "params": types.Schema(
                                 type=types.Type.OBJECT,
                                 properties={
-                                    "any": types.Schema(type=types.Type.STRING)
+                                    "data": types.Schema(type=types.Type.STRING)
                                 }
                             ),
                         },
+                        required=["name", "action"]
                     ),
                 ),
                 "server_skill": types.Schema(
@@ -161,10 +194,11 @@ class GeminiService(GeminiServiceInterface):
                         "params": types.Schema(
                             type=types.Type.OBJECT,
                             properties={
-                                "any": types.Schema(type=types.Type.STRING)
+                                "data": types.Schema(type=types.Type.STRING)
                             }
                         ),
                     },
+                    required=["name", "action"]
                 ),
                 "interaction_params": types.Schema(
                     type=types.Type.OBJECT,
