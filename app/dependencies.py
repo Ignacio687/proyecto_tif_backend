@@ -51,7 +51,8 @@ class DependencyContainer:
             # Inject repositories as dependencies to ensure reuse of connections
             self._auth_service = AuthService(
                 user_repository=self.user_repository,
-                email_service=None  # EmailService doesn't use database connections
+                email_service=None,  # EmailService doesn't use database connections
+                key_context_repository=self.context_repository
             )
         return self._auth_service
     

@@ -12,6 +12,7 @@ from app.config import settings
 from app.models.entities import User
 from app.models.dtos import AuthResponse
 from app.repositories.user_repository import UserRepository
+from app.repositories.key_context_repository import KeyContextRepository
 from app.services.interfaces import AuthServiceInterface
 from app.services.email_service import EmailService
 from app.logger import logger
@@ -25,7 +26,7 @@ def utc_now() -> datetime:
 class AuthService(AuthServiceInterface):
     """Service for handling authentication operations"""
     
-    def __init__(self, user_repository=None, email_service=None):
+    def __init__(self, user_repository=None, email_service=None, key_context_repository=None):
         # Use dependency injection to avoid creating new instances each time
         if user_repository is None:
             from app.repositories.user_repository import UserRepository
@@ -33,9 +34,13 @@ class AuthService(AuthServiceInterface):
         if email_service is None:
             from app.services.email_service import EmailService
             email_service = EmailService()
+        if key_context_repository is None:
+            from app.repositories.key_context_repository import KeyContextRepository
+            key_context_repository = KeyContextRepository()
             
         self.user_repository = user_repository
         self.email_service = email_service
+        self.key_context_repository = key_context_repository
         self.jwt_secret = settings.JWT_SECRET
         self.jwt_algorithm = settings.JWT_ALGORITHM
         self.access_token_expire_seconds = settings.ACCESS_TOKEN_EXPIRE_SECONDS
@@ -84,6 +89,9 @@ class AuthService(AuthServiceInterface):
                         'is_active': True
                     }
                     user = await self.user_repository.create_user(user_data)
+                    
+                    # Create default key context entry for new user
+                    await self._create_default_key_context(user)
             
             # Generate JWT tokens
             tokens = await self.create_token_pair(user)
@@ -183,6 +191,9 @@ class AuthService(AuthServiceInterface):
             
             # Create user
             user = await self.user_repository.create_user(user_data)
+            
+            # Create default key context entry for new user
+            await self._create_default_key_context(user)
             
             # Send verification email
             email_sent = await self.email_service.send_verification_email(email, verification_code)
@@ -452,3 +463,21 @@ class AuthService(AuthServiceInterface):
         except Exception as e:
             logger.error(f"Error refreshing token: {e}")
             raise ValueError("Token refresh failed")
+    
+    async def _create_default_key_context(self, user: User) -> None:
+        """Create default key context entry for new user"""
+        try:
+            if user.name:
+                default_context = f"User full name: {user.name}, use first name when addressing user"
+                
+                await self.key_context_repository.save_user_key_context(
+                    user_id=str(user.id),
+                    relevant_info=default_context,
+                    context_priority=50  # Medium priority for basic user info
+                )
+                logger.debug(f"Created default key context for user {user.id}: {default_context}")
+            else:
+                logger.debug(f"No name provided for user {user.id}, skipping default key context creation")
+        except Exception as e:
+            logger.error(f"Error creating default key context for user {user.id}: {e}")
+            # Don't raise error - this is not critical for user registration
