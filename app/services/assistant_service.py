@@ -1,8 +1,9 @@
 """
 Assistant service implementation for handling user interactions
 """
-from typing import Dict, Any, Optional
-from app.models.dtos import ServerResponse
+import json
+from typing import Dict, Any, Optional, List
+from app.models.dtos import ServerResponse, SystemMessage
 from app.services.interfaces import AssistantServiceInterface
 from app.logger import logger
 
@@ -10,7 +11,8 @@ from app.logger import logger
 class AssistantService(AssistantServiceInterface):
     """Service for handling assistant operations"""
     
-    def __init__(self, conversation_repository=None, key_context_repository=None, gemini_service=None):
+    def __init__(self, conversation_repository=None, key_context_repository=None, 
+                 gemini_service=None, context_service=None):
         # Use dependency injection to avoid creating new instances each time
         if conversation_repository is None:
             from app.repositories.conversation_repository import ConversationRepository
@@ -18,53 +20,73 @@ class AssistantService(AssistantServiceInterface):
         if key_context_repository is None:
             from app.repositories.key_context_repository import KeyContextRepository
             key_context_repository = KeyContextRepository()
+        if context_service is None:
+            from app.services.context_service import ContextService
+            context_service = ContextService()
         if gemini_service is None:
             from app.services.gemini_service import GeminiService
-            gemini_service = GeminiService()
+            gemini_service = GeminiService(context_service)
             
         self.conversation_repository = conversation_repository
         self.key_context_repository = key_context_repository
         self.gemini_service = gemini_service
+        self.context_service = context_service
     
-    async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10) -> ServerResponse:
+    async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10, 
+                                 system_message: Optional[SystemMessage] = None) -> ServerResponse:
         """Handle user request and return assistant response"""
         try:
-            # Get user's conversation history
-            last_conversations = await self.conversation_repository.get_last_conversations(user_id)
+            # Get user's conversation history using the context service's optimized method
+            last_conversations = await self.conversation_repository.get_optimized_conversations(user_id)
             
-            # Get user's key contexts and build mapping for efficient updates
-            key_contexts = await self.key_context_repository.get_user_key_contexts(user_id)
+            # Get user's key contexts using the context service's optimized method
+            key_context_data = await self.key_context_repository.get_optimized_key_contexts(user_id)
             
             # Create mapping from entry_number to context_id for efficient updates later
-            entry_to_context_map = {idx + 1: str(context.id) for idx, context in enumerate(key_contexts)}
+            key_contexts_full = await self.key_context_repository.get_user_key_contexts(user_id)
+            entry_to_context_map = {idx + 1: str(context.id) for idx, context in enumerate(key_contexts_full)}
             
-            # Convert to data format for Gemini with temporary entry numbers
-            key_context_data = [
-                {
-                    "relevant_info": context.relevant_info,
-                    "timestamp": context.updated_at,
-                    "context_priority": context.context_priority,
-                    "entry_number": idx + 1
-                }
-                for idx, context in enumerate(key_contexts)
-            ]
-            
-            # Get Gemini response
-            gemini_reply = await self.gemini_service.get_gemini_response(
-                user_req,
-                key_context_data=key_context_data,
-                last_conversations=last_conversations,
-                context_conversations=last_conversations,
-                max_items=max_items
-            )
-            
-            # Save the conversation
-            await self.conversation_repository.save_conversation(
-                user_id=user_id,
-                user_input=user_req,
-                server_reply=gemini_reply.get('server_reply', ''),
-                interaction_params=gemini_reply.get('interaction_params')
-            )
+            # Handle patching if requested
+            if system_message and system_message.patch_last:
+                # Create an enhanced prompt with additional context
+                enhanced_prompt = f"PATCH REQUEST: The user said '{user_req}' but additional context is now available. "
+                
+                # Add contacts list if provided
+                if system_message.contacts_list:
+                    contacts_str = ", ".join(system_message.contacts_list)
+                    enhanced_prompt += f"Available contacts: {contacts_str}. "
+                
+                logger.info(f"Patch requested. Original query: '{user_req}', Additional context provided")
+                
+                # Get response with enhanced context for patch request
+                gemini_reply = await self.gemini_service.get_gemini_response(
+                    enhanced_prompt,
+                    key_context_data=key_context_data,
+                    last_conversations=last_conversations,
+                    context_conversations=last_conversations,
+                    max_items=max_items
+                )
+                
+                # Update the last conversation in database with the patched response
+                await self._update_last_conversation_with_patch(user_id, gemini_reply.get('server_reply', ''))
+                logger.info(f"Updated last conversation for user {user_id} with patched response")
+            else:
+                # Get Gemini response using the new architecture for normal requests
+                gemini_reply = await self.gemini_service.get_gemini_response(
+                    user_req,
+                    key_context_data=key_context_data,
+                    last_conversations=last_conversations,
+                    context_conversations=last_conversations,
+                    max_items=max_items
+                )
+                
+                # Save the conversation normally only if it's not a patch request
+                await self.conversation_repository.save_conversation(
+                    user_id=user_id,
+                    user_input=user_req,
+                    server_reply=gemini_reply.get('server_reply', ''),
+                    interaction_params=gemini_reply.get('interaction_params')
+                )
             
             # Extract and save key context information from the interaction
             # 1. Process context updates (priority changes for existing entries) using the mapping
@@ -102,6 +124,13 @@ class AssistantService(AssistantServiceInterface):
             
             # Clean up zero-priority key contexts to maintain performance
             await self.key_context_repository.cleanup_old_contexts(user_id, max_items)
+            
+            # Clean up duplicate contexts periodically (every 10th request)
+            import random
+            if random.randint(1, 100) == 1:  # 1% chance
+                removed_count = await self.key_context_repository.cleanup_duplicate_contexts(user_id)
+                if removed_count > 0:
+                    logger.info(f"Cleaned up {removed_count} duplicate contexts for user {user_id}")
             
             # Return structured response
             return ServerResponse(
@@ -145,3 +174,29 @@ class AssistantService(AssistantServiceInterface):
         except Exception as e:
             logger.error(f"Error getting conversation history for user {user_id}: {e}")
             raise
+
+    async def _update_last_conversation_with_patch(self, user_id: str, patched_server_reply: str) -> None:
+        """Update the last conversation in database with the patched response"""
+        try:
+            # Get the most recent conversation for this user
+            recent_conversations = await self.conversation_repository.get_user_conversations(
+                user_id, limit=1, skip=0
+            )
+            
+            if recent_conversations:
+                last_conversation = recent_conversations[0]
+                # Update the server_reply of the last conversation with the patched response
+                success = await self.conversation_repository.update_conversation_reply(
+                    conversation_id=str(last_conversation.id),
+                    new_server_reply=patched_server_reply
+                )
+                if success:
+                    logger.info(f"Successfully updated last conversation {last_conversation.id} with patched response")
+                else:
+                    logger.error(f"Failed to update last conversation {last_conversation.id} with patched response")
+            else:
+                logger.warning(f"No conversations found for user {user_id} to patch")
+                
+        except Exception as e:
+            logger.error(f"Error updating last conversation with patch for user {user_id}: {e}")
+            # Don't raise exception to avoid breaking the main flow

@@ -11,9 +11,16 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class SystemMessage(BaseModel):
+    """DTO for system messages from client"""
+    patch_last: Optional[bool] = Field(None, description="Indicates this is a patch request for the last interaction")
+    contacts_list: Optional[List[str]] = Field(None, description="Complete list of contact names from user's device")
+
+
 class UserRequest(BaseModel):
     """DTO for user assistant requests"""
     user_req: str = Field(description="User input for the assistant")
+    system_message: Optional[SystemMessage] = Field(None, description="System message for client-server coordination")
 
 
 class GoogleAuthRequest(BaseModel):

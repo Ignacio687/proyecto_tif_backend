@@ -30,5 +30,10 @@ class Settings:
     # Application settings
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
     DEBUG: bool = os.environ.get("DEBUG", "False").lower() == "true"
+    
+    # Context Management settings
+    MAX_KEY_CONTEXT_CHARS: int = int(os.environ.get("MAX_KEY_CONTEXT_CHARS", "1500"))
+    MAX_CONVERSATION_CHARS: int = int(os.environ.get("MAX_CONVERSATION_CHARS", "2000"))
+    MAX_TOTAL_CONTEXT_CHARS: int = int(os.environ.get("MAX_TOTAL_CONTEXT_CHARS", "6000"))
 
 settings = Settings()
