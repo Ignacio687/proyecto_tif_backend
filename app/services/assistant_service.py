@@ -36,11 +36,15 @@ class AssistantService(AssistantServiceInterface):
                                  system_message: Optional[SystemMessage] = None) -> ServerResponse:
         """Handle user request and return assistant response"""
         try:
-            # Get user's conversation history using the context service's optimized method
-            last_conversations = await self.conversation_repository.get_optimized_conversations(user_id)
+            # Get user's conversation history using the context service's optimized method with proper char limit
+            last_conversations = await self.conversation_repository.get_optimized_conversations(
+                user_id, max_chars=self.context_service.max_conversation_chars
+            )
             
-            # Get user's key contexts using the context service's optimized method
-            key_context_data = await self.key_context_repository.get_optimized_key_contexts(user_id)
+            # Get user's key contexts using the context service's optimized method with proper char limit
+            key_context_data = await self.key_context_repository.get_optimized_key_contexts(
+                user_id, max_chars=self.context_service.max_key_context_chars
+            )
             
             # Create mapping from entry_number to context_id for efficient updates later
             key_contexts_full = await self.key_context_repository.get_user_key_contexts(user_id)
@@ -51,10 +55,15 @@ class AssistantService(AssistantServiceInterface):
                 # Create an enhanced prompt with additional context
                 enhanced_prompt = f"PATCH REQUEST: The user said '{user_req}' but additional context is now available. "
                 
-                # Add contacts list if provided
+                # Add specific skill failure message if provided
+                if system_message.skill_failure_message:
+                    enhanced_prompt += f"SKILL EXECUTION FAILED: {system_message.skill_failure_message} "
+                
+                # Add contacts list if provided with specific message about contact not found
                 if system_message.contacts_list:
                     contacts_str = ", ".join(system_message.contacts_list)
-                    enhanced_prompt += f"Available contacts: {contacts_str}. "
+                    enhanced_prompt += f"IMPORTANT: The contact requested was NOT FOUND. Here are the available contacts: {contacts_str}. "
+                    enhanced_prompt += "Please inform the user that the contact was not found and provide the available options. "
                 
                 logger.info(f"Patch requested. Original query: '{user_req}', Additional context provided")
                 
@@ -143,7 +152,7 @@ class AssistantService(AssistantServiceInterface):
             logger.error(f"Error handling user request for user {user_id}: {e}")
             raise
     
-    async def get_user_conversation_history(self, user_id: str, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
+    async def get_user_conversation_history(self, user_id: str, page: int = 1, page_size: int = 30) -> Dict[str, Any]:
         """Get user's conversation history with pagination"""
         try:
             skip = (page - 1) * page_size

@@ -84,11 +84,25 @@ class KeyContextRepository(KeyContextRepositoryInterface):
                     return context
                 
                 # Very similar (same words, different punctuation)
-                existing_words = set(existing_normalized.replace('.', '').replace(',', '').split())
-                new_words = set(normalized_info.replace('.', '').replace(',', '').split())
+                existing_words = set(existing_normalized.replace('.', '').replace(',', '').replace('!', '').replace('?', '').split())
+                new_words = set(normalized_info.replace('.', '').replace(',', '').replace('!', '').replace('?', '').split())
                 
-                # If 90% of words overlap, consider it duplicate
-                if len(existing_words & new_words) / max(len(existing_words), len(new_words)) >= 0.9:
+                # Skip comparison if either set is empty
+                if not existing_words or not new_words:
+                    continue
+                
+                # Calculate proper Jaccard similarity (intersection over union)
+                intersection = len(existing_words & new_words)
+                union = len(existing_words | new_words)
+                jaccard_similarity = intersection / union if union > 0 else 0
+                
+                # Also check if one context is a subset of another (containment)
+                containment_score = intersection / min(len(existing_words), len(new_words))
+                
+                # Consider duplicate if:
+                # 1. Jaccard similarity > 80% (very similar content)
+                # 2. OR containment > 90% (one is mostly contained in the other)
+                if jaccard_similarity >= 0.8 or containment_score >= 0.9:
                     return context
             
             return None

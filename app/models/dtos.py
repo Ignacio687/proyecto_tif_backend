@@ -15,6 +15,7 @@ class SystemMessage(BaseModel):
     """DTO for system messages from client"""
     patch_last: Optional[bool] = Field(None, description="Indicates this is a patch request for the last interaction")
     contacts_list: Optional[List[str]] = Field(None, description="Complete list of contact names from user's device")
+    skill_failure_message: Optional[str] = Field(None, description="Message indicating a skill execution failed")
 
 
 class UserRequest(BaseModel):
