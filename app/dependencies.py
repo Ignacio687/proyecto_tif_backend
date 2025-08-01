@@ -4,6 +4,7 @@ Dependency injection container for the application
 from app.services.auth_service import AuthService
 from app.services.assistant_service import AssistantService
 from app.services.gemini_service import GeminiService
+from app.services.context_service import ContextService
 from app.repositories.user_repository import UserRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.key_context_repository import KeyContextRepository
@@ -22,6 +23,7 @@ class DependencyContainer:
         self._auth_service = None
         self._assistant_service = None
         self._gemini_service = None
+        self._context_service = None
     
     @property
     def user_repository(self) -> UserRepository:
@@ -57,6 +59,13 @@ class DependencyContainer:
         return self._auth_service
     
     @property
+    def context_service(self) -> ContextService:
+        """Get singleton ContextService instance"""
+        if self._context_service is None:
+            self._context_service = ContextService()
+        return self._context_service
+
+    @property
     def assistant_service(self) -> AssistantService:
         """Get singleton AssistantService instance with injected dependencies"""
         if self._assistant_service is None:
@@ -64,7 +73,8 @@ class DependencyContainer:
             self._assistant_service = AssistantService(
                 conversation_repository=self.conversation_repository,
                 key_context_repository=self.context_repository,
-                gemini_service=self.gemini_service
+                gemini_service=self.gemini_service,
+                context_service=self.context_service
             )
         return self._assistant_service
     
@@ -72,7 +82,7 @@ class DependencyContainer:
     def gemini_service(self) -> GeminiService:
         """Get singleton GeminiService instance"""
         if self._gemini_service is None:
-            self._gemini_service = GeminiService()      
+            self._gemini_service = GeminiService(context_service=self.context_service)      
         return self._gemini_service
 
 
@@ -104,3 +114,8 @@ def get_conversation_repository() -> ConversationRepository:
 def get_context_repository() -> KeyContextRepository:
     """Get KeyContextRepository instance from container"""
     return container.context_repository
+
+
+def get_context_service() -> ContextService:
+    """Get ContextService instance from container"""
+    return container.context_service

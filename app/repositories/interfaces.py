@@ -78,8 +78,8 @@ class ConversationRepositoryInterface(ABC):
         pass
     
     @abstractmethod
-    async def get_last_conversations(self, user_id: str, limit: int = 4) -> List[Dict[str, Any]]:
-        """Get user's last conversations"""
+    async def get_optimized_conversations(self, user_id: str, max_chars: int = 2000) -> List[Dict[str, Any]]:
+        """Get conversations optimized for character limits"""
         pass
     
     @abstractmethod
@@ -93,6 +93,11 @@ class ConversationRepositoryInterface(ABC):
         """Count total conversations for a user"""
         pass
 
+    @abstractmethod
+    async def update_conversation_reply(self, conversation_id: str, new_server_reply: str) -> bool:
+        """Update the server_reply of a specific conversation"""
+        pass
+
 
 class KeyContextRepositoryInterface(ABC):
     """Interface for key context-specific repository operations"""
@@ -100,11 +105,6 @@ class KeyContextRepositoryInterface(ABC):
     @abstractmethod
     async def get_user_key_contexts(self, user_id: str, limit: int = 10) -> List[KeyContext]:
         """Get user's key contexts ordered by priority"""
-        pass
-    
-    @abstractmethod
-    async def get_user_key_context_data(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get user's key context data as dict list for compatibility"""
         pass
     
     @abstractmethod
@@ -125,4 +125,19 @@ class KeyContextRepositoryInterface(ABC):
     @abstractmethod
     async def cleanup_old_contexts(self, user_id: str, max_items: int = 10) -> None:
         """Remove only contexts with priority 0 if exceeding max_items limit"""
+        pass
+
+    @abstractmethod
+    async def get_optimized_key_contexts(self, user_id: str, max_chars: int = 1500, min_priority: int = 1) -> List[Dict[str, Any]]:
+        """Get key contexts optimized for character limits and priority"""
+        pass
+    
+    @abstractmethod
+    async def get_context_summary_stats(self, user_id: str) -> Dict[str, Any]:
+        """Get summary statistics about user's context"""
+        pass
+
+    @abstractmethod
+    async def cleanup_duplicate_contexts(self, user_id: str) -> int:
+        """Remove duplicate key contexts, keeping the most recent one"""
         pass

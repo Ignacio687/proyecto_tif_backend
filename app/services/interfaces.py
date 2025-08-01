@@ -4,7 +4,7 @@ Service interfaces for business logic operations
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 from app.models.entities import User
-from app.models.dtos import AuthResponse, ServerResponse
+from app.models.dtos import AuthResponse, ServerResponse, SystemMessage
 
 
 class AuthServiceInterface(ABC):
@@ -65,7 +65,8 @@ class AssistantServiceInterface(ABC):
     """Interface for assistant services"""
     
     @abstractmethod
-    async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10) -> ServerResponse:
+    async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10, 
+                                 system_message: Optional[SystemMessage] = None) -> ServerResponse:
         """Handle user request and return assistant response"""
         pass
     
@@ -84,4 +85,22 @@ class GeminiServiceInterface(ABC):
                                 context_conversations: Optional[List[Dict[str, Any]]] = None, 
                                 max_items: int = 10) -> Dict[str, Any]:
         """Get response from Gemini AI"""
+        pass
+
+
+class ContextServiceInterface(ABC):
+    """Interface for context management service"""
+    
+    @abstractmethod
+    def build_optimized_context(self, 
+                              key_context_data: List[Dict[str, Any]], 
+                              context_conversations: List[Dict[str, Any]],
+                              fixed_context: str) -> str:
+        """Build optimized context with character limits and smart prioritization"""
+        pass
+    
+    @abstractmethod
+    def calculate_context_stats(self, key_context_data: List[Dict[str, Any]], 
+                               context_conversations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate statistics about context usage"""
         pass
