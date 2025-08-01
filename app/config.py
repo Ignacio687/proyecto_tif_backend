@@ -33,7 +33,7 @@ class Settings:
     
     # Context Management settings
     MAX_KEY_CONTEXT_CHARS: int = int(os.environ.get("MAX_KEY_CONTEXT_CHARS", "2000"))
-    MAX_CONVERSATION_CHARS: int = int(os.environ.get("MAX_CONVERSATION_CHARS", "6000"))
-    MAX_TOTAL_CONTEXT_CHARS: int = int(os.environ.get("MAX_TOTAL_CONTEXT_CHARS", "12000"))
+    MAX_CONVERSATION_CHARS: int = int(os.environ.get("MAX_CONVERSATION_CHARS", "5000"))
+    MAX_TOTAL_CONTEXT_CHARS: int = int(os.environ.get("MAX_TOTAL_CONTEXT_CHARS", "10000"))
 
 settings = Settings()

@@ -242,10 +242,12 @@ class GeminiService(GeminiServiceInterface):
             
             "🔍 WEB SEARCH: For current/recent info (news, weather, movies, events), automatically use GoogleSearchSkill in 'skills' array.\n\n"
             
-            "RESPONSE FIELDS:\n"
+            "RESPONSE FIELDS (JSON) MANDATORY:\n"
             "- 'server_reply': Natural, helpful response. Use names when known.\n"
             "- 'app_params': [{'question': true/false}] - true only if you need more user input. Only end with '?' when 'question': true.\n"
             "- 'interaction_params': {'relevant_for_context': true/false, 'context_priority': 1-100, 'relevant_info': 'User fact'}\n"
+            "  • Set relevant_for_context=true ONLY when you learn NEW permanent facts about the user (relationships, preferences, job, location, etc.)\n"
+            "  • Set relevant_for_context=false for temporary requests, questions, or actions (calls, reminders, weather, news, etc.)\n"
             "- 'context_updates': [{'entry_number': N, 'new_priority': N}] (optional)\n\n"
             "- 'skills': Array of skills to execute. Available skills:\n"
             "  • CallContactSkill: action='call_contact', params={'data': '{\"contact_name\":\"Name\"}'} - ALWAYS try calling any requested contact first\n"
@@ -258,8 +260,12 @@ class GeminiService(GeminiServiceInterface):
             "- Check existing context before adding new entries.\n"
             "- Focus on new user facts, not repeated info.\n"
             "- Use context_updates to modify existing entries.\n"
-            "- Key context = LONG-TERM MEMORY for facts/preferences, NOT conversation summary.\n\n"
-            
+            "- Key context = LONG-TERM MEMORY for facts/preferences, NOT conversation summary.\n"
+            "- NEVER store 'User asked...' or 'User requested...' - store actual FACTS about the user.\n"
+            "- GOOD examples: 'User's sister is named Luna', 'User prefers Spanish language', 'User works as software engineer'\n"
+            "- BAD examples: 'User asked to call Luna', 'User requested weather', 'User wants a reminder'\n"
+            "- Only save permanent user information that will be useful in future conversations.\n\n"
+
             "BEHAVIOR:\n"
             "- Be natural, helpful, proactive.\n"
             "- ALWAYS attempt skills (CallContactSkill, SendMessageSkill, etc.) when user requests actions, don't assume they will fail.\n"
