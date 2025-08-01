@@ -32,8 +32,8 @@ class Settings:
     DEBUG: bool = os.environ.get("DEBUG", "False").lower() == "true"
     
     # Context Management settings
-    MAX_KEY_CONTEXT_CHARS: int = int(os.environ.get("MAX_KEY_CONTEXT_CHARS", "1500"))
-    MAX_CONVERSATION_CHARS: int = int(os.environ.get("MAX_CONVERSATION_CHARS", "2000"))
-    MAX_TOTAL_CONTEXT_CHARS: int = int(os.environ.get("MAX_TOTAL_CONTEXT_CHARS", "6000"))
+    MAX_KEY_CONTEXT_CHARS: int = int(os.environ.get("MAX_KEY_CONTEXT_CHARS", "2000"))
+    MAX_CONVERSATION_CHARS: int = int(os.environ.get("MAX_CONVERSATION_CHARS", "6000"))
+    MAX_TOTAL_CONTEXT_CHARS: int = int(os.environ.get("MAX_TOTAL_CONTEXT_CHARS", "12000"))
 
 settings = Settings()
