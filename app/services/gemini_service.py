@@ -2,6 +2,7 @@
 Gemini AI service implementation
 """
 import json
+import re
 from typing import Optional, List, Dict, Any, Union
 from google import genai
 from google.genai import types
@@ -10,14 +11,24 @@ from app.logger import logger
 from app.services.interfaces import GeminiServiceInterface, ContextServiceInterface
 
 
+def _parse_gemini_major_version(model: str) -> int:
+    """Parse major version from model string (e.g. gemini-3-flash-preview -> 3, gemini-2.5-flash-lite -> 2). Default 2 if unparseable (use pre-Gemini 3 / 2.5 logic)."""
+    match = re.match(r"gemini-(\d+)", model, re.IGNORECASE)
+    return int(match.group(1)) if match else 2
+
+
 class GeminiService(GeminiServiceInterface):
     """Service for interacting with Gemini AI"""
     
     def __init__(self, context_service: ContextServiceInterface):
         self.api_key = settings.GEMINI_API_KEY
         self.client = genai.Client(api_key=self.api_key)
-        self.model = "gemini-2.5-flash-lite"
+        self.model = settings.GEMINI_MODEL
         self.context_service = context_service
+    
+    def _gemini_major_version(self) -> int:
+        """Major version of the configured model (3+ supports structured output with tools)."""
+        return _parse_gemini_major_version(self.model)
 
 
 
@@ -47,17 +58,21 @@ class GeminiService(GeminiServiceInterface):
                     if skill.get('name') == 'GoogleSearchSkill' and skill.get('action') == 'activate':
                         logger.info("GoogleSearchSkill requested in skills array, activating Google Search")
                         
-                        # Generate search response with Google Search activated (natural language only)
+                        # Generate search response with Google Search
                         search_response = await self._generate_response(prompt, key_context_data, last_conversations, context_conversations, max_items, use_google_search=True)
                         logger.info(f"Google Search response received: {search_response}")
                         
-                        # Replace server_reply with search results from Google Search
-                        search_text = search_response if isinstance(search_response, str) else str(search_response)
-                        gemini_response['server_reply'] = search_text
-                        
-                        # Update app_params based on whether the search response ends with a question mark
-                        has_question = search_text.strip().endswith('?')
-                        gemini_response['app_params'] = [{"question": has_question}]
+                        if self._gemini_major_version() >= 3 and isinstance(search_response, dict):
+                            # Gemini 3+: structured JSON
+                            gemini_response['server_reply'] = search_response.get('server_reply', '')
+                            gemini_response['app_params'] = search_response.get('app_params', [{"question": False}])
+                            if search_response.get('interaction_params'):
+                                gemini_response['interaction_params'] = search_response['interaction_params']
+                        else:
+                            # Pre-Gemini 3: natural language (str)
+                            search_text = str(search_response)
+                            gemini_response['server_reply'] = search_text
+                            gemini_response['app_params'] = [{"question": search_text.strip().endswith('?')}]
                         
                         # Remove GoogleSearchSkill from skills array since it's been executed
                         gemini_response['skills'] = [s for s in gemini_response['skills'] if s.get('name') != 'GoogleSearchSkill']
@@ -131,34 +146,33 @@ class GeminiService(GeminiServiceInterface):
         if use_google_search:
             tools.append(types.Tool(google_search=types.GoogleSearch()))
 
-        # Generate response with different configs based on tool usage
-        if tools:
-            # When using tools, we can't force JSON format, so use natural language
+        use_structured_output_with_tools = self._gemini_major_version() >= 3
+        response_schema = self._build_response_schema()
+
+        if tools and not use_structured_output_with_tools:
+            # Pre-Gemini 3: when using tools, no structured output (natural language only)
             generate_content_config = types.GenerateContentConfig(
                 max_output_tokens=2500,
                 thinking_config=types.ThinkingConfig(
                     thinking_budget=0,
                 ),
                 tools=tools,
-                # No response_mime_type or response_schema when using tools
                 system_instruction=[
                     types.Part.from_text(text=fixed_context),
                 ],
             )
         else:
-            # When not using tools, use structured JSON response
-            response_schema = self._build_response_schema()
-            generate_content_config = types.GenerateContentConfig(
-                max_output_tokens=2500,
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=0,
-                ),
-                response_mime_type="application/json",
-                response_schema=response_schema,
-                system_instruction=[
-                    types.Part.from_text(text=fixed_context),
-                ],
-            )
+            # No tools, or Gemini 3+: structured output (with or without tools)
+            config_kwargs: Dict[str, Any] = {
+                "max_output_tokens": 2500,
+                "thinking_config": types.ThinkingConfig(thinking_budget=0),
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+                "system_instruction": [types.Part.from_text(text=fixed_context)],
+            }
+            if tools:
+                config_kwargs["tools"] = tools
+            generate_content_config = types.GenerateContentConfig(**config_kwargs)
 
         logger.info(f"Sending user prompt to Gemini: {prompt}")
         response_text = ""
@@ -185,14 +199,13 @@ class GeminiService(GeminiServiceInterface):
             }
         
         try:
-            if tools:
-                # When using tools, return just the raw text response
+            if tools and not use_structured_output_with_tools:
+                # Pre-Gemini 3 with tools: return raw text
                 return response_text.strip()
-            else:
-                # Regular JSON parsing for non-tool responses
-                gemini_response = json.loads(response_text)
-                logger.debug(f"Parsed JSON response: {gemini_response}")
-                return gemini_response
+            # Structured JSON (no tools, or Gemini 3+ with tools)
+            gemini_response = json.loads(response_text)
+            logger.debug(f"Parsed JSON response: {gemini_response}")
+            return gemini_response
                 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini response as JSON: {e}")
@@ -213,19 +226,22 @@ class GeminiService(GeminiServiceInterface):
 
     def _build_fixed_context(self, max_items: int, use_google_search: bool = False) -> str:
         """Build the optimized fixed context prompt for Gemini"""
-        
+        language_policy = (
+            "LANGUAGE (STRICT): Always respond in the same language as the user's message.\n\n"
+        )
         if use_google_search:
-            # Simplified context for Google Search - NO JSON mentions
+            # Context for Google Search with structured JSON (Gemini 3)
             return (
-                "You are a helpful virtual assistant with access to current web information through Google Search.\n\n"
-                
+                language_policy
+                + "You are a helpful virtual assistant with access to current web information through Google Search. "
+                "Respond with JSON matching the required schema.\n\n"
                 "INSTRUCTIONS:\n"
-                "- Provide a natural, conversational response based on the search results\n"
+                "- Provide a natural, conversational response in 'server_reply' based on the search results\n"
                 "- Use the user's name when known from context\n"
                 "- Be specific and helpful with current information\n"
-                "- If you need more user input, ask a follow-up question and end with '?'\n"
+                "- If you need more user input, ask a follow-up question and end with '?' (set app_params [{'question': true}])\n"
                 "- Be proactive and offer additional relevant information\n"
-                
+                "- Include interaction_params (relevant_for_context, context_priority, relevant_info) and app_params [{'question': true/false}]\n\n"
                 "BEHAVIOR:\n"
                 "- Be natural, helpful, proactive, and conversational\n"
                 "- Use current, up-to-date information from search results\n"
@@ -238,7 +254,8 @@ class GeminiService(GeminiServiceInterface):
         
         # Regular JSON format instructions for non-search responses
         fixed_context = (
-            "You are a helpful virtual assistant. Respond with JSON matching this exact schema.\n\n"
+            language_policy
+            + "You are a helpful virtual assistant. Respond with JSON matching this exact schema.\n\n"
             
             "🔍 WEB SEARCH: For current/recent info (news, weather, movies, events), automatically use GoogleSearchSkill in 'skills' array.\n\n"
             

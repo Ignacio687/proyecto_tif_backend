@@ -1,0 +1,33 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: tif-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    build: .
+    container_name: tif-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8000"  # host:container — use 8001 if 8000 is already in use locally
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB: ${MONGODB_DB:-tif_db}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+volumes:
+  mongodb_data:

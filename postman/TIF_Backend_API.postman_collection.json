@@ -1,0 +1,182 @@
+{
+  "info": {
+    "name": "TIF Backend API",
+    "description": "Collection for TIF Backend API (auth + assistant endpoints)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "access_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Google Auth",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{google_id_token}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/google",
+            "description": "Authenticate with Google OAuth ID token"
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"username\": \"testuser\",\n  \"password\": \"securepassword123\",\n  \"name\": \"Test User\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/register",
+            "description": "Register with email and username"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_or_username\": \"testuser\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login",
+            "description": "Login with email/username and password. Save access_token to collection variable for protected endpoints."
+          }
+        },
+        {
+          "name": "Verify Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": "{{base_url}}/api/v1/auth/verify-token",
+            "description": "Verify JWT access token"
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/verify-email",
+            "description": "Verify email with code sent to user"
+          }
+        },
+        {
+          "name": "Resend Verification",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/resend-verification",
+            "description": "Resend verification code to email"
+          }
+        },
+        {
+          "name": "Request Password Reset",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/request-password-reset",
+            "description": "Request password reset email"
+          }
+        },
+        {
+          "name": "Confirm Password Reset",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\",\n  \"new_password\": \"newsecurepassword123\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/confirm-password-reset",
+            "description": "Confirm password reset with code and new password"
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/refresh",
+            "description": "Refresh access token using refresh token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Assistant",
+      "item": [
+        {
+          "name": "Assistant (normal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_req\": \"Hello, how are you?\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/assistant",
+            "description": "Send user message to assistant (normal flow). Requires valid access_token."
+          }
+        },
+        {
+          "name": "Assistant (with system_message)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_req\": \"Call John\",\n  \"system_message\": {\n    \"patch_last\": true,\n    \"skill_failure_message\": \"Contact not found\",\n    \"contacts_list\": [\"Jane\", \"Bob\"]\n  }\n}"
+            },
+            "url": "{{base_url}}/api/v1/assistant",
+            "description": "Patch last response (e.g. after skill failure) with system_message"
+          }
+        },
+        {
+          "name": "Conversations",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": "{{base_url}}/api/v1/conversations?page=1&page_size=10",
+            "description": "Get user conversation history with pagination"
+          }
+        }
+      ]
+    }
+  ]
+}
