@@ -1,5 +1,7 @@
 # SGNtech Auto Reconciliation API - Architecture Guide
 
+> **Note:** This guide references `src/` in some examples; this project uses `app/` as the application root. Apply the same patterns under `app/` (e.g. `app/core/`, `app/models/`).
+
 ## 🎯 **CRITICAL: This document defines MANDATORY architectural patterns. ALL future development MUST follow these patterns strictly.**
 
 ---
@@ -646,7 +648,7 @@ async def endpoint(api_key: APIKey = Depends(get_api_key)):
 
 ---
 
-## � **WHAT NOT TO DO**
+## ⚠️ **WHAT NOT TO DO**
 - Don't go to the next file until the current one is fully done, and ALL tests pass
 - Don't skip comprehensive test creation
 - Don't create minimal tests - make them COMPREHENSIVE

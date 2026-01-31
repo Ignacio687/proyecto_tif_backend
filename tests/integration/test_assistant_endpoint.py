@@ -16,10 +16,7 @@ from unittest.mock import patch
 # test_env runs, so the app would use .env's MONGODB_URI (e.g. "mongodb" host
 # that doesn't resolve). Import GeminiService only inside the test that needs it.
 
-
-def _skip_if_no_gemini_key():
-    if not os.environ.get("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY not set; integration tests require real Gemini API")
+from tests.integration.conftest import skip_if_no_gemini_key
 
 
 # ---- Google Search: prompts that should trigger search (varied phrasings) ----
@@ -52,7 +49,7 @@ class TestAssistantEndpointIntegration:
         self, client, auth_token
     ):
         """Normal flow: real LLM returns 200 and ServerResponse shape."""
-        _skip_if_no_gemini_key()
+        skip_if_no_gemini_key()
         response = client.post(
             "/api/v1/assistant",
             json={"user_req": "Hello, how are you?"},
@@ -79,7 +76,7 @@ class TestGoogleSearchFlow:
         self, client, auth_token, user_req
     ):
         """For search-style prompts, final response must NOT include GoogleSearchSkill (it is executed server-side)."""
-        _skip_if_no_gemini_key()
+        skip_if_no_gemini_key()
         response = client.post(
             "/api/v1/assistant",
             json={"user_req": user_req},
@@ -101,7 +98,7 @@ class TestGoogleSearchFlow:
         self, client, auth_token, user_req
     ):
         """Verify that _generate_response was called with use_google_search=True (Google Search tool active)."""
-        _skip_if_no_gemini_key()
+        skip_if_no_gemini_key()
         from app.services.gemini_service import GeminiService
 
         google_search_calls = []
@@ -147,7 +144,7 @@ class TestCallSkillFlow:
         self, client, auth_token, user_req
     ):
         """For call instructions, response must include a call skill with correct structure and contact data."""
-        _skip_if_no_gemini_key()
+        skip_if_no_gemini_key()
         response = client.post(
             "/api/v1/assistant",
             json={"user_req": user_req},
@@ -193,7 +190,7 @@ class TestPatchFailedCallFlow:
         self, client, auth_token
     ):
         """Real flow: first request is a call; second request is a patch with contact not found + similar contacts."""
-        _skip_if_no_gemini_key()
+        skip_if_no_gemini_key()
 
         # 1) First request: user asks to call someone (so conversation has that)
         r1 = client.post(
@@ -238,7 +235,7 @@ class TestPatchFailedCallFlow:
         self, client, auth_token, user_req, contacts
     ):
         """Patch with different phrasings and contact lists; response should reflect failure and options."""
-        _skip_if_no_gemini_key()
+        skip_if_no_gemini_key()
 
         # Ensure there is a previous "call" turn (so patch has context)
         client.post(

@@ -219,10 +219,6 @@ class GeminiService(GeminiServiceInterface):
                     "relevant_info": "JSON parsing error occurred during response processing"
                 }
             }
-        
-        return gemini_response
-
-    
 
     def _build_fixed_context(self, max_items: int, use_google_search: bool = False) -> str:
         """Build the optimized fixed context prompt for Gemini"""

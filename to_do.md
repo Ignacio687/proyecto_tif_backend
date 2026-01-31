@@ -301,4 +301,4 @@
 
 - Make some tests to verify the model consistency on calling skills and google search
 
-- Add to system context esctrict policy to talk on the lenguage the user meesage is in.
+- Add to system context strict policy to talk in the language the user message is in.

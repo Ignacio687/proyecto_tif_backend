@@ -132,7 +132,7 @@ def auth_token(test_env, test_mongodb_uri):
     return token
 
 
-def _skip_if_no_gemini_key():
+def skip_if_no_gemini_key():
     """Skip integration tests that call Gemini if GEMINI_API_KEY is not set."""
     if not os.environ.get("GEMINI_API_KEY"):
         pytest.skip(
