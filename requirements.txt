@@ -3,7 +3,7 @@ uvicorn[standard]
 pydantic
 motor
 loguru
-google-genai
+google-genai>=1.56.0
 python-dotenv
 beanie
 PyJWT
@@ -13,6 +13,8 @@ google-auth-httplib2
 passlib[bcrypt]
 python-multipart
 email-validator
+geopy>=2.4.0
+timezonefinder>=6.0.0
 
 # Testing
 pytest>=7.0.0

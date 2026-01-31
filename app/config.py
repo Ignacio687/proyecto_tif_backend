@@ -11,6 +11,8 @@ class Settings:
     # AI Service settings
     GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
+    # Second call (skills / function calling): faster and cheaper model
+    GEMINI_MODEL_SKILLS: str = os.environ.get("GEMINI_MODEL_SKILLS", "gemini-2.5-flash-lite")
     
     # Authentication settings
     JWT_SECRET: str = os.environ.get("JWT_SECRET", "your-super-secret-jwt-key-change-this-in-production")

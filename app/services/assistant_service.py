@@ -32,8 +32,16 @@ class AssistantService(AssistantServiceInterface):
         self.gemini_service = gemini_service
         self.context_service = context_service
     
-    async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10, 
-                                 system_message: Optional[SystemMessage] = None) -> ServerResponse:
+    async def handle_user_request(
+        self,
+        user_id: str,
+        user_req: str,
+        max_items: int = 10,
+        system_message: Optional[SystemMessage] = None,
+        timezone: Optional[str] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+    ) -> ServerResponse:
         """Handle user request and return assistant response"""
         try:
             # Get user's conversation history using the context service's optimized method with proper char limit
@@ -73,7 +81,10 @@ class AssistantService(AssistantServiceInterface):
                     key_context_data=key_context_data,
                     last_conversations=last_conversations,
                     context_conversations=last_conversations,
-                    max_items=max_items
+                    max_items=max_items,
+                    user_timezone=timezone,
+                    user_latitude=latitude,
+                    user_longitude=longitude,
                 )
                 
                 # Update the last conversation in database with the patched response
@@ -86,7 +97,10 @@ class AssistantService(AssistantServiceInterface):
                     key_context_data=key_context_data,
                     last_conversations=last_conversations,
                     context_conversations=last_conversations,
-                    max_items=max_items
+                    max_items=max_items,
+                    user_timezone=timezone,
+                    user_latitude=latitude,
+                    user_longitude=longitude,
                 )
                 
                 # Save the conversation normally only if it's not a patch request

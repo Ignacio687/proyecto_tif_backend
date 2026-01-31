@@ -132,6 +132,54 @@ def auth_token(test_env, test_mongodb_uri):
     return token
 
 
+@pytest.fixture
+def auth_token_fresh_user(test_env, test_mongodb_uri):
+    """
+    Create a new verified test user and JWT for each test. Use when tests need
+    isolated conversation history (e.g. context-dependent call scenarios).
+    """
+    import jwt
+    from datetime import datetime, timedelta, timezone
+    from pymongo import MongoClient
+    from app.config import settings
+
+    sync_client = MongoClient(test_mongodb_uri)
+    db = sync_client["tif_test"]
+    users = db["users"]
+
+    user_id = ObjectId()
+    test_email = f"integration-{user_id}@test.com"
+    test_username = f"user_{user_id}"
+    test_password = "testpassword123"
+    password_hash = _hash_password(test_password)
+
+    users.insert_one({
+        "_id": user_id,
+        "email": test_email,
+        "username": test_username,
+        "password_hash": password_hash,
+        "is_verified": True,
+        "is_active": True,
+        "name": "Integration Test User",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    })
+    sync_client.close()
+
+    access_payload = {
+        "user_id": str(user_id),
+        "email": test_email,
+        "type": "access",
+        "exp": datetime.now(timezone.utc)
+        + timedelta(seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS),
+        "iat": datetime.now(timezone.utc),
+    }
+    token = jwt.encode(
+        access_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM
+    )
+    return token
+
+
 def skip_if_no_gemini_key():
     """Skip integration tests that call Gemini if GEMINI_API_KEY is not set."""
     if not os.environ.get("GEMINI_API_KEY"):

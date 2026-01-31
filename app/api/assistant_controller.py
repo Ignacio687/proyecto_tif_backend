@@ -25,9 +25,12 @@ async def assistant_endpoint(
             raise HTTPException(status_code=401, detail="Invalid user token")
             
         response = await assistant_service.handle_user_request(
-            user_id, 
-            request.user_req, 
-            system_message=request.system_message
+            user_id,
+            request.user_req,
+            system_message=request.system_message,
+            timezone=request.timezone,
+            latitude=request.latitude,
+            longitude=request.longitude,
         )
         logger.info(f"Response sent for user {user_id}: {response.server_reply[:100]}...")
         return response

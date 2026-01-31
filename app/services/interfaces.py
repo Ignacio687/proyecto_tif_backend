@@ -63,10 +63,18 @@ class AuthServiceInterface(ABC):
 
 class AssistantServiceInterface(ABC):
     """Interface for assistant services"""
-    
+
     @abstractmethod
-    async def handle_user_request(self, user_id: str, user_req: str, max_items: int = 10, 
-                                 system_message: Optional[SystemMessage] = None) -> ServerResponse:
+    async def handle_user_request(
+        self,
+        user_id: str,
+        user_req: str,
+        max_items: int = 10,
+        system_message: Optional[SystemMessage] = None,
+        timezone: Optional[str] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+    ) -> ServerResponse:
         """Handle user request and return assistant response"""
         pass
     
@@ -78,12 +86,19 @@ class AssistantServiceInterface(ABC):
 
 class GeminiServiceInterface(ABC):
     """Interface for Gemini AI service"""
-    
+
     @abstractmethod
-    async def get_gemini_response(self, prompt: str, key_context_data: Optional[List[Dict[str, Any]]] = None, 
-                                last_conversations: Optional[List[Dict[str, Any]]] = None, 
-                                context_conversations: Optional[List[Dict[str, Any]]] = None, 
-                                max_items: int = 10) -> Dict[str, Any]:
+    async def get_gemini_response(
+        self,
+        prompt: str,
+        key_context_data: Optional[List[Dict[str, Any]]] = None,
+        last_conversations: Optional[List[Dict[str, Any]]] = None,
+        context_conversations: Optional[List[Dict[str, Any]]] = None,
+        max_items: int = 10,
+        user_timezone: Optional[str] = None,
+        user_latitude: Optional[float] = None,
+        user_longitude: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """Get response from Gemini AI"""
         pass
 

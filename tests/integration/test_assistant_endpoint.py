@@ -29,16 +29,61 @@ GOOGLE_SEARCH_PROMPTS = [
     "What time is it in Tokyo right now?",
 ]
 
-# ---- Call skill: clear and misleading phrasings ----
+# ---- Call skill: unambiguous prompts (explicit name); ambiguous ones are in CALL_WITH_CONTEXT_SCENARIOS ----
+# Single request (str) or two-step (first_req, follow_up_req) when model may ask for clarification
 CALL_SKILL_PROMPTS = [
     "Call John",
     "I need to call John",
     "Can you call María for me?",
     "Please dial Mom",
-    "Ring my brother",
     "Call John Smith",
-    "I want to call the office",
-    "Call my sister",
+    ("I want to call the office", "Just call the contact Office"),
+]
+
+# ---- Call with prior context: (context_message, ambiguous_request, expected_contact_name) ----
+# First message establishes who; second is ambiguous so the model must use conversation context.
+CALL_WITH_CONTEXT_SCENARIOS = [
+    ("My sister's name is Laura.", "Call my sister", "Laura"),
+    ("I have a sister called Ana.", "Call my sister", "Ana"),
+    ("My brother is named Pedro.", "Call my brother", "Pedro"),
+    ("The person I need to reach is María García.", "Call her", "María"),
+    ("We were talking about calling John.", "Yes, go ahead and call him", "John"),
+    ("I need to contact my mom - her name is Carmen.", "Call my mom", "Carmen"),
+    ("The contact I want to dial is Roberto.", "Call that person", "Roberto"),
+    ("My sister Claudia can help.", "Call my sister", "Claudia"),
+    ("I need to call Sophie about the meeting.", "Call the person I mentioned", "Sophie"),
+    ("The one we need to ring is David.", "Yes, call that one", "David"),
+]
+
+# ---- Send message skill: unambiguous recipient (ambiguous e.g. "my brother" may trigger follow-up question) ----
+SEND_MESSAGE_PROMPTS = [
+    "Text John: I'll be there in 5 minutes",
+    "Send a message to María saying hello",
+    "Can you message Mom that I'm running late?",
+]
+
+# ---- Follow-up without "?": assistant asks for content; skills selector must not return placeholder ----
+# (user_req, placeholder_message_values) — if SendMessageSkill is returned, message must not be in placeholder set
+FOLLOW_UP_WITHOUT_QUESTION_MARK_SCENARIOS = [
+    ("I had to tell my sister something", ["something", "what", "it", ""]),
+    ("Tell my sister something", ["something", "what", "it", ""]),
+    ("I need to message my brother but I didn't say what yet", ["something", "what", "it", ""]),
+]
+
+# Same idea with prior context (e.g. we already messaged Patricia); (context_message, user_req, placeholder_message_values)
+FOLLOW_UP_WITHOUT_QUESTION_MARK_WITH_CONTEXT = [
+    (
+        "We already sent a message to Patricia.",
+        "I had to tell my sister something",
+        ["something", "what", "it", ""],
+    ),
+]
+
+# ---- Create reminder skill: prompts that should trigger CreateReminderSkill (send timezone so "in 1 hour" / "tomorrow" resolve) ----
+CREATE_REMINDER_PROMPTS = [
+    "Remind me in 1 hour to call John",
+    "Set a reminder for tomorrow at 9 to buy milk",
+    "Remind me at 5pm to leave the office",
 ]
 
 
@@ -67,6 +112,26 @@ class TestAssistantEndpointIntegration:
         if data.get("skills") is not None:
             assert isinstance(data["skills"], list)
 
+    def test_assistant_accepts_optional_timezone_and_location(
+        self, client, auth_token
+    ):
+        """Request body can include optional timezone and lat/lon (Points 2 & 3)."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={
+                "user_req": "Hello",
+                "timezone": "America/Argentina/Buenos_Aires",
+                "latitude": -34.6,
+                "longitude": -58.4,
+            },
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "server_reply" in data
+        assert isinstance(data["server_reply"], str)
+
 
 class TestGoogleSearchFlow:
     """Validate Google Search: no skill in final response, and API was called with tool."""
@@ -93,11 +158,17 @@ class TestGoogleSearchFlow:
             f"GoogleSearchSkill must not appear in final response (executed server-side). Got skills: {skills}"
         )
 
-    @pytest.mark.parametrize("user_req", GOOGLE_SEARCH_PROMPTS[:2])  # subset to avoid rate limits
+    # Location payload so backend injects "Current date/time" and "User location"
+    WEATHER_REQUEST_WITH_LOCATION = [
+        {"user_req": "What's the weather like today?", "timezone": "Europe/London", "latitude": 51.5, "longitude": -0.1},
+        {"user_req": "What is the weather today?", "timezone": "America/Argentina/Buenos_Aires", "latitude": -34.6, "longitude": -58.4},
+    ]
+
+    @pytest.mark.parametrize("payload", WEATHER_REQUEST_WITH_LOCATION)
     def test_google_search_tool_was_used_when_search_expected(
-        self, client, auth_token, user_req
+        self, client, auth_token, payload
     ):
-        """Verify that _generate_response was called with use_google_search=True (Google Search tool active)."""
+        """With location, second call always runs; skills selector is told first reply may imply action not yet done, so search is invoked."""
         skip_if_no_gemini_key()
         from app.services.gemini_service import GeminiService
 
@@ -112,6 +183,9 @@ class TestGoogleSearchFlow:
             context_conversations,
             max_items,
             use_google_search=False,
+            reply_only=False,
+            current_time_str="",
+            user_location_str="",
         ):
             google_search_calls.append(use_google_search)
             return await original(
@@ -122,12 +196,15 @@ class TestGoogleSearchFlow:
                 context_conversations,
                 max_items,
                 use_google_search,
+                reply_only,
+                current_time_str,
+                user_location_str,
             )
 
         with patch.object(GeminiService, "_generate_response", record_wrapper):
             response = client.post(
                 "/api/v1/assistant",
-                json={"user_req": user_req},
+                json=payload,
                 headers={"Authorization": f"Bearer {auth_token}"},
             )
         assert response.status_code == 200
@@ -137,19 +214,34 @@ class TestGoogleSearchFlow:
 
 
 class TestCallSkillFlow:
-    """Validate Call skill: always present with correct data for call instructions."""
+    """Validate Call skill: always present with correct data for call instructions.
+    Uses auth_token_fresh_user so each run has no prior conversation (model won't ask 'Which John?')."""
 
     @pytest.mark.parametrize("user_req", CALL_SKILL_PROMPTS)
     def test_call_instruction_returns_call_skill_with_correct_data(
-        self, client, auth_token, user_req
+        self, client, auth_token_fresh_user, user_req
     ):
-        """For call instructions, response must include a call skill with correct structure and contact data."""
+        """For call instructions, response must include a call skill with correct structure and contact data.
+        If user_req is a tuple (first_req, follow_up_req), send both and assert on the second response."""
         skip_if_no_gemini_key()
-        response = client.post(
-            "/api/v1/assistant",
-            json={"user_req": user_req},
-            headers={"Authorization": f"Bearer {auth_token}"},
-        )
+        if isinstance(user_req, tuple):
+            first_req, follow_up_req = user_req
+            client.post(
+                "/api/v1/assistant",
+                json={"user_req": first_req},
+                headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+            )
+            response = client.post(
+                "/api/v1/assistant",
+                json={"user_req": follow_up_req},
+                headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+            )
+        else:
+            response = client.post(
+                "/api/v1/assistant",
+                json={"user_req": user_req},
+                headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+            )
         assert response.status_code == 200
         data = response.json()
         assert "server_reply" in data
@@ -180,6 +272,248 @@ class TestCallSkillFlow:
         contact_name = (parsed.get("contact_name") or "").strip()
         assert len(contact_name) > 0, (
             f"contact_name must be non-empty. Got: {parsed}"
+        )
+
+
+class TestCallSkillWithContext:
+    """Ambiguous call requests that are disambiguated by a previous message in the conversation.
+    Uses auth_token_fresh_user so each scenario has isolated conversation history (no prior sisters/contacts)."""
+
+    @pytest.mark.parametrize(
+        "context_message,ambiguous_request,expected_contact_name",
+        CALL_WITH_CONTEXT_SCENARIOS,
+    )
+    def test_ambiguous_call_uses_prior_context(
+        self, client, auth_token_fresh_user, context_message, ambiguous_request, expected_contact_name
+    ):
+        """First message establishes the contact; second message is ambiguous (e.g. 'Call my sister'). Model should infer contact from context."""
+        skip_if_no_gemini_key()
+
+        # 1) Establish context: user mentions the contact (sister/brother/mom/name)
+        r1 = client.post(
+            "/api/v1/assistant",
+            json={"user_req": context_message},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert r1.status_code == 200, f"Context message failed: {r1.text[:200]}"
+
+        # 2) Ambiguous request: "Call my sister", "Call her", etc. — model should use prior turn
+        r2 = client.post(
+            "/api/v1/assistant",
+            json={"user_req": ambiguous_request},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert r2.status_code == 200, f"Ambiguous request failed: {r2.text[:200]}"
+        data = r2.json()
+
+        skills = data.get("skills") or []
+        call_skills = [
+            s
+            for s in skills
+            if (s.get("name") or "").lower().find("call") != -1
+            and (s.get("action") or "").lower() == "call_contact"
+        ]
+        assert len(call_skills) >= 1, (
+            f"Expected CallContactSkill after context '{context_message}' and request '{ambiguous_request}'. "
+            f"Got skills: {skills}. Reply: {(data.get('server_reply') or '')[:150]}"
+        )
+        skill = call_skills[0]
+        params = skill.get("params") or {}
+        data_str = params.get("data")
+        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
+        try:
+            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+        except (TypeError, json.JSONDecodeError):
+            parsed = {}
+        contact_name = (parsed.get("contact_name") or "").strip()
+        assert len(contact_name) > 0, (
+            f"contact_name must be non-empty after context. Got: {parsed}"
+        )
+        # Expected name may appear as full name or first name (e.g. "María García" -> "María")
+        expected_lower = expected_contact_name.lower()
+        contact_lower = contact_name.lower()
+        assert expected_lower in contact_lower or contact_lower in expected_lower, (
+            f"Expected contact_name to match '{expected_contact_name}' from context. Got contact_name: '{contact_name}'"
+        )
+
+
+class TestSendMessageSkillFlow:
+    """Validate Send message skill: response includes SendMessageSkill with recipient and message.
+    Uses auth_token_fresh_user so each run has no prior conversation (model won't ask 'Which John?')."""
+
+    @pytest.mark.parametrize("user_req", SEND_MESSAGE_PROMPTS)
+    def test_send_message_returns_skill_with_recipient_and_message(
+        self, client, auth_token_fresh_user, user_req
+    ):
+        """For message/text instructions, response must include SendMessageSkill with recipient and message."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={"user_req": user_req},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "server_reply" in data
+        skills = data.get("skills") or []
+        msg_skills = [
+            s for s in skills
+            if (s.get("name") or "").lower().find("message") != -1
+            and (s.get("action") or "").lower() == "send_message"
+        ]
+        assert len(msg_skills) >= 1, (
+            f"Expected SendMessageSkill for message instruction. Got skills: {skills}"
+        )
+        skill = msg_skills[0]
+        params = skill.get("params") or {}
+        data_str = params.get("data")
+        assert data_str is not None, f"SendMessage skill must have params.data. Got params: {params}"
+        try:
+            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+        except (TypeError, json.JSONDecodeError):
+            parsed = {}
+        assert "recipient" in parsed and "message" in parsed, (
+            f"SendMessage params.data must contain recipient and message. Got: {parsed}"
+        )
+        recipient = (parsed.get("recipient") or "").strip()
+        message = (parsed.get("message") or "").strip()
+        assert len(recipient) > 0 and len(message) > 0, (
+            f"recipient and message must be non-empty. Got: {parsed}"
+        )
+
+
+class TestFollowUpWithoutQuestionMark:
+    """When the assistant asks for more info without '?', skills selector must not return placeholder (e.g. send_message with message 'algo')."""
+
+    @pytest.mark.parametrize(
+        "user_req,placeholder_message_values",
+        FOLLOW_UP_WITHOUT_QUESTION_MARK_SCENARIOS,
+    )
+    def test_no_send_message_with_placeholder_when_assistant_asks_for_content(
+        self, client, auth_token_fresh_user, user_req, placeholder_message_values
+    ):
+        """User says they need to tell someone 'something' but doesn't specify what. Assistant may reply asking for content without '?'; we must not return SendMessageSkill with placeholder message."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={"user_req": user_req},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        skills = data.get("skills") or []
+        msg_skills = [
+            s for s in skills
+            if (s.get("name") or "").lower().find("message") != -1
+            and (s.get("action") or "").lower() == "send_message"
+        ]
+        placeholders = {p.lower().strip() for p in placeholder_message_values if p is not None}
+        for skill in msg_skills:
+            params = skill.get("params") or {}
+            data_str = params.get("data")
+            if not data_str:
+                continue
+            try:
+                parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+            except (TypeError, json.JSONDecodeError):
+                continue
+            message = (parsed.get("message") or "").strip().lower()
+            assert message not in placeholders, (
+                f"SendMessageSkill must not use placeholder message when assistant asks for content. "
+                f"Got message: {repr(parsed.get('message'))}. Reply: {(data.get('server_reply') or '')[:150]}"
+            )
+
+    @pytest.mark.parametrize(
+        "context_message,user_req,placeholder_message_values",
+        FOLLOW_UP_WITHOUT_QUESTION_MARK_WITH_CONTEXT,
+    )
+    def test_no_send_message_placeholder_when_assistant_asks_for_content_with_context(
+        self, client, auth_token_fresh_user, context_message, user_req, placeholder_message_values
+    ):
+        """With prior context (e.g. already messaged Patricia), user says they had to tell sister something. Assistant may ask what to say without '?'; no placeholder message in skill."""
+        skip_if_no_gemini_key()
+        # Establish context
+        r1 = client.post(
+            "/api/v1/assistant",
+            json={"user_req": context_message},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert r1.status_code == 200
+        # Ambiguous: user doesn't say what message to send
+        response = client.post(
+            "/api/v1/assistant",
+            json={"user_req": user_req},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        skills = data.get("skills") or []
+        msg_skills = [
+            s for s in skills
+            if (s.get("name") or "").lower().find("message") != -1
+            and (s.get("action") or "").lower() == "send_message"
+        ]
+        placeholders = {p.lower().strip() for p in placeholder_message_values if p is not None}
+        for skill in msg_skills:
+            params = skill.get("params") or {}
+            data_str = params.get("data")
+            if not data_str:
+                continue
+            try:
+                parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+            except (TypeError, json.JSONDecodeError):
+                continue
+            message = (parsed.get("message") or "").strip().lower()
+            assert message not in placeholders, (
+                f"SendMessageSkill must not use placeholder when assistant asked for content. "
+                f"Got message: {repr(parsed.get('message'))}. Reply: {(data.get('server_reply') or '')[:150]}"
+            )
+
+
+class TestCreateReminderSkillFlow:
+    """Validate Create reminder skill: response includes CreateReminderSkill with title and datetime."""
+
+    @pytest.mark.parametrize("user_req", CREATE_REMINDER_PROMPTS)
+    def test_create_reminder_returns_skill_with_title_and_datetime(
+        self, client, auth_token, user_req
+    ):
+        """For reminder instructions, response must include CreateReminderSkill with title and datetime. Send timezone so 'in 1 hour' / 'tomorrow' resolve."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={
+                "user_req": user_req,
+                "timezone": "America/Argentina/Buenos_Aires",
+            },
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "server_reply" in data
+        skills = data.get("skills") or []
+        reminder_skills = [
+            s for s in skills
+            if (s.get("name") or "").lower().find("reminder") != -1
+            and (s.get("action") or "").lower() == "create_reminder"
+        ]
+        assert len(reminder_skills) >= 1, (
+            f"Expected CreateReminderSkill for reminder instruction. Got skills: {skills}"
+        )
+        skill = reminder_skills[0]
+        params = skill.get("params") or {}
+        data_str = params.get("data")
+        assert data_str is not None, f"CreateReminder skill must have params.data. Got params: {params}"
+        try:
+            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+        except (TypeError, json.JSONDecodeError):
+            parsed = {}
+        assert "title" in parsed and "datetime" in parsed, (
+            f"CreateReminder params.data must contain title and datetime. Got: {parsed}"
+        )
+        title = (parsed.get("title") or "").strip()
+        dt = (parsed.get("datetime") or "").strip()
+        assert len(title) > 0 and len(dt) > 0, (
+            f"title and datetime must be non-empty. Got: {parsed}"
         )
 
 
