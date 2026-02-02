@@ -22,10 +22,9 @@ class UserRequest(BaseModel):
     """DTO for user assistant requests"""
     user_req: str = Field(description="User input for the assistant")
     system_message: Optional[SystemMessage] = Field(None, description="System message for client-server coordination")
-    # User location / timezone for correct time interpretation and model context (Point 2)
-    timezone: Optional[str] = Field(None, description="IANA timezone (e.g. America/Argentina/Buenos_Aires)")
-    latitude: Optional[float] = Field(None, description="User latitude (optional, for timezone derivation)")
-    longitude: Optional[float] = Field(None, description="User longitude (optional, for timezone derivation)")
+    # User timezone and location for correct time and model context (Point 2)
+    timezone: Optional[str] = Field(None, description="IANA timezone (e.g. America/Argentina/Buenos_Aires); used for time display and context. Default UTC.")
+    location: Optional[str] = Field(None, description="Human-readable location for context (e.g. 'Buenos Aires, Argentina'), not coordinates. Used directly as context if provided.")
 
 
 class GoogleAuthRequest(BaseModel):

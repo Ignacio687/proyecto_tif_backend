@@ -1,4 +1,4 @@
-- **Point 1 – Skills via Function Calling (fix unreliable skill invocation)**
+- **Point 1 – Skills via Function Calling (fix unreliable skill invocation)** *(implemented)*
 
   **Problem:** The model is unreliable at calling skills. Integration tests show it often returns `skills: None` for clear call instructions ("Call John", "Ring my brother", etc.) and does not consistently trigger the Google Search tool for search-style prompts. The model is losing focus on the long system context: it has to follow a big JSON schema and a long list of skill descriptions in plain text, so it frequently omits or misuses the skills array.
 
@@ -7,6 +7,7 @@
   1. **First call:** Model generates the **user response** (the reply the user sees). It only knows the **list of available skills** (names / high-level), not the full function declarations or parameter schemas. It produces the natural-language reply; it may or may not indicate that a skill should be called (we do not rely on this).
   2. **Second call (always):** Run **always**, not only when the first call “selected” a skill. This call is **only for generating the skill schema** (exact function name + parameters). Inputs are **minimal**: user request, first call response, and system context—**not** the full first-call context, to save tokens. The second call decides from (user_req, first_reply, system context) whether any skill is needed and with what params; it outputs the structured function call(s) or nothing. Backend executes the skill(s) returned by the second call. **Why always:** If we only ran the second call when the first “selected” a skill, we would still depend on the first call behaving correctly. When it misbehaves (e.g. does not select a skill when the user said “Call John”), we would never run the second call and would not fix the problem. By always running the second call, the second call is the single source of truth for “what skills to run”; the first call can focus on the reply, and we still get correct skill invocation even when the first call omits or mis-signals.
   3. **No skill needed:** When the second call returns no function call, we simply return the first call’s response as-is.
+  4. **Concurrency:** The full Gemini flow (first + second call) runs in a thread via `get_gemini_response` (async → run_in_executor), so many concurrent user requests do not stack on the event loop.
 
   Reference: https://ai.google.dev/gemini-api/docs/function-calling?hl=es-419&example=meeting .
 
@@ -70,21 +71,23 @@
             generate()
     """
 
-- **Point 2 –User location / timezone in requests**
+- **Point 2 – User location / timezone in requests** *(implemented)*
 
   **Problem:** We register all timestamps as UTC without taking into account the user's location. This causes time-related confusion (e.g. "tomorrow", "in the morning") and limits context (e.g. we can't infer local time for weather).
 
-  **Solution:** Ask the app to send the **current user location** (or timezone) with every request—e.g. timezone identifier (e.g. `America/Argentina/Buenos_Aires`), or lat/long so the backend can derive timezone. Use this to:
-  1. **Store and interpret times correctly** (convert to user local time when needed, or store UTC + timezone).
-  2. **Provide context to the model** (e.g. for weather search, "user is in Buenos Aires") and for any skill that benefits from location.
+  **Solution (current):** The app sends with every request:
+  - **Timezone** (optional): IANA identifier (e.g. `America/Argentina/Buenos_Aires`). Used for current time and for converting stored timestamps when building context and when sending to the app. If not provided, UTC is used.
+  - **Location** (optional): Human-readable location string (e.g. "Buenos Aires, Argentina"), **not** coordinates. Used directly as context for the model; never stored or geocoded.
+  - **Datetimes:** Stored **always in UTC** in the database. Converted to the user's timezone (if provided) when used in **key context and conversation sections** (prompts) and when returned in **GET /conversations** (optional query param `timezone`). So if the user changes timezone, previous datetimes show correctly in the current timezone.
+  - **No geocoding:** No reverse geocoding or coordinate-based services; location is a free-form string from the app.
 
-- **Point 3 – Current time and date in every request context**
+- **Point 3 – Current time and date in every request context** *(implemented)*
 
   In the context of **every** request, always include the **current time and date** as seen by the user: either computed from the user's location/timezone (if sent) or UTC if not present. This allows the model to:
   - Compare "now" with timestamps and relative times mentioned in previous conversations (e.g. "we talked about this yesterday", "remind me next Monday").
   - Evaluate and reason about time and day in prior messages (e.g. "last week the user said…") with correct temporal grounding.
 
-- **Point 4 – Setting a Reminder and Send a Message (when implemented in the app)**
+- **Point 4 – Setting a Reminder and Send a Message (when implemented in the app)** *(backend done)*
 
   Implement these skills on the backend so they are available to the model once the app supports them:
   1. **Set reminder:** User can ask to be reminded at a specific time or after a delay (e.g. "remind me in 1 hour", "remind me tomorrow at 9"). Backend should schedule or store the reminder; use user timezone/location when provided for correct local time.
@@ -118,7 +121,7 @@
 
 ---
 
-- **Point 6 – Use new gemini 2.5 flash preview tts for online voice genration, send voice to the app**
+- **Point 6 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
     """
         # To run this code you need to install the following dependencies:
         # pip install google-genai
@@ -273,3 +276,13 @@
     """
 
 ---
+
+- **Point 7 – Erradicate this behaviors:**
+
+    "server_reply": "Excelente, Ignacio. ¿Te gustaría que busque más información sobre algún tema en particular de las noticias o necesitás ayuda con otra cosa?" That follow up question should not be asked, the action was already done.0
+
+---
+
+- **Point 8 – Retry logic for 503 in Gemini client** *(to consider)*
+
+  Consider adding retry logic for **503 (Service Unavailable)** responses from the Gemini API (e.g. deadline expired, model overloaded) so transient failures are retried and the client is more resilient.

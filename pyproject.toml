@@ -4,7 +4,3 @@ version = "0.1.0"
 description = "TIF Backend API with Gemini assistant"
 readme = "README.md"
 requires-python = ">=3.11"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]

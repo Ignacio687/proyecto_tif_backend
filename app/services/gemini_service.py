@@ -1,6 +1,7 @@
 """
 Gemini AI service implementation
 """
+import asyncio
 import json
 import re
 from datetime import datetime, timezone, tzinfo
@@ -13,60 +14,17 @@ from app.logger import logger
 from app.services.interfaces import GeminiServiceInterface, ContextServiceInterface
 
 
-def _reverse_geocode(latitude: float, longitude: float) -> Optional[str]:
-    """
-    Resolve lat/lon to a human-readable location (e.g. 'Buenos Aires, Argentina').
-    Uses Nominatim (geopy). Result is for model context only; never stored or logged at info.
-    """
-    try:
-        from geopy.geocoders import Nominatim  # type: ignore[import-untyped]
-        from geopy.extra.rate_limiter import RateLimiter  # type: ignore[import-untyped]
-        geolocator = Nominatim(user_agent="tif-backend-assistant")
-        reverse = RateLimiter(geolocator.reverse, min_delay_seconds=1.0)
-        location = reverse(f"{latitude}, {longitude}")
-        if location and location.address:
-            # Prefer city/country style; fallback to full address
-            addr = location.raw.get("address", {}) or {}
-            city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality")
-            country = addr.get("country")
-            if city and country:
-                return f"{city}, {country}"
-            if country:
-                return country
-            return location.address.split(",")[0].strip() if location.address else None
-        return None
-    except Exception as e:
-        logger.debug("Reverse geocode failed: %s", e)
-        return None
-
-
-def _timezone_from_coordinates(latitude: float, longitude: float) -> Optional[str]:
-    """
-    Get IANA timezone name from lat/lon (e.g. 'America/Argentina/Buenos_Aires').
-    Used when the client did not send timezone_str. Never stored or logged at info.
-    """
-    try:
-        from timezonefinder import TimezoneFinder  # type: ignore[import-untyped]
-        tf = TimezoneFinder()
-        tz_name = tf.timezone_at(lat=latitude, lng=longitude)
-        return tz_name
-    except Exception as e:
-        logger.debug("Timezone from coordinates failed: %s", e)
-        return None
-
-
 def build_current_time_and_location_context(
     timezone_str: Optional[str] = None,
-    latitude: Optional[float] = None,
-    longitude: Optional[float] = None,
+    location: Optional[str] = None,
 ) -> Tuple[str, str]:
     """
     Build current date/time (user's local or UTC) and user location line for request context.
-    Timezone: 1) use timezone_str if valid, 2) else derive from lat/lon if present, 3) else UTC.
-    Location is for model context only: never saved to DB, only logged at debug level.
+    Timezone: use timezone_str if valid, else UTC. Location: use the provided string directly
+    as context if provided (human-readable place, not coordinates).
     Returns (current_time_str, user_location_str).
     """
-    tz: Optional[tzinfo] = None
+    tz: tzinfo = timezone.utc
     resolved_tz_name: Optional[str] = None
 
     if timezone_str:
@@ -74,19 +32,7 @@ def build_current_time_and_location_context(
             tz = ZoneInfo(timezone_str)
             resolved_tz_name = timezone_str
         except Exception:
-            tz = None
-
-    if tz is None and latitude is not None and longitude is not None:
-        tz_name = _timezone_from_coordinates(latitude, longitude)
-        if tz_name:
-            try:
-                tz = ZoneInfo(tz_name)
-                resolved_tz_name = tz_name
-            except Exception:
-                tz = None
-
-    if tz is None:
-        tz = timezone.utc
+            tz = timezone.utc
 
     now = datetime.now(tz)
     if resolved_tz_name:
@@ -99,11 +45,8 @@ def build_current_time_and_location_context(
     location_parts = []
     if resolved_tz_name:
         location_parts.append(f"User timezone: {resolved_tz_name}")
-    if latitude is not None and longitude is not None:
-        description = _reverse_geocode(latitude, longitude)
-        if description:
-            location_parts.append(f"User location: {description}")
-        # If geocode failed, omit raw coordinates; never send lat/lon to model or log at info
+    if location and location.strip():
+        location_parts.append(f"User location: {location.strip()}")
     user_location_str = "; ".join(location_parts) if location_parts else ""
     return current_time_str, user_location_str
 
@@ -128,6 +71,123 @@ class GeminiService(GeminiServiceInterface):
         """Major version of the configured model (3+ supports structured output with tools)."""
         return _parse_gemini_major_version(self.model)
 
+    def _sync_first_call(
+        self, model: str, contents: List[Any], config: Any
+    ) -> str:
+        """Blocking first-call generation; used when entire Gemini flow runs in a thread."""
+        response_text = ""
+        for chunk in self.client.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        ):
+            response_text += chunk.text or ""
+        return response_text
+
+    def get_gemini_response_sync(
+        self,
+        prompt: str,
+        key_context_data: Optional[List[Dict[str, Any]]] = None,
+        last_conversations: Optional[List[Dict[str, Any]]] = None,
+        context_conversations: Optional[List[Dict[str, Any]]] = None,
+        max_items: int = 10,
+        user_timezone: Optional[str] = None,
+        user_location: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Synchronous full Gemini flow (first call + second call + optional search).
+        Intended to be run in a thread by the assistant service so the event loop is not blocked.
+        """
+        if last_conversations is None:
+            last_conversations = []
+        if key_context_data is None:
+            key_context_data = []
+        if context_conversations is None:
+            context_conversations = []
+
+        current_time_str, user_location_str = build_current_time_and_location_context(
+            user_timezone, user_location
+        )
+
+        gemini_response = self._generate_response(
+            prompt,
+            key_context_data,
+            last_conversations,
+            context_conversations,
+            max_items,
+            use_google_search=False,
+            reply_only=True,
+            current_time_str=current_time_str,
+            user_location_str=user_location_str,
+            user_timezone=user_timezone,
+        )
+        if not isinstance(gemini_response, dict):
+            gemini_response = {
+                "server_reply": str(gemini_response),
+                "app_params": [{"question": False}],
+                "interaction_params": {
+                    "relevant_for_context": False,
+                    "context_priority": 1,
+                    "relevant_info": "",
+                },
+            }
+
+        first_reply = gemini_response.get("server_reply", "")
+
+        previous_user_req = None
+        previous_assistant_reply = None
+        if context_conversations:
+            prev = context_conversations[0]
+            previous_user_req = prev.get("user_input")
+            previous_assistant_reply = prev.get("server_reply")
+
+        skills_from_second = self._generate_skill_calls(
+            user_req=prompt,
+            first_reply=first_reply,
+            current_time_str=current_time_str,
+            user_location_str=user_location_str,
+            previous_user_req=previous_user_req,
+            previous_assistant_reply=previous_assistant_reply,
+        )
+        gemini_response["skills"] = skills_from_second
+
+        if gemini_response.get("skills"):
+            for skill in gemini_response["skills"]:
+                if skill.get("name") == "GoogleSearchSkill" and skill.get("action") == "activate":
+                    logger.info("GoogleSearchSkill from second call, activating Google Search")
+                    search_response = self._generate_response(
+                        prompt,
+                        key_context_data,
+                        last_conversations,
+                        context_conversations,
+                        max_items,
+                        use_google_search=True,
+                        reply_only=True,
+                        current_time_str=current_time_str,
+                        user_location_str=user_location_str,
+                        user_timezone=user_timezone,
+                    )
+                    if self._gemini_major_version() >= 3 and isinstance(search_response, dict):
+                        gemini_response["server_reply"] = search_response.get("server_reply", "")
+                        gemini_response["app_params"] = search_response.get("app_params", [{"question": False}])
+                        if search_response.get("interaction_params"):
+                            gemini_response["interaction_params"] = search_response["interaction_params"]
+                    else:
+                        search_text = str(search_response)
+                        gemini_response["server_reply"] = search_text
+                        gemini_response["app_params"] = [
+                            {"question": search_text.strip().endswith("?")}
+                        ]
+                    gemini_response["skills"] = [
+                        s for s in gemini_response["skills"] if s.get("name") != "GoogleSearchSkill"
+                    ]
+                    break
+
+        if isinstance(gemini_response, dict) and "server_reply" in gemini_response:
+            server_reply = gemini_response.get("server_reply", "").strip()
+            gemini_response["app_params"] = [{"question": server_reply.endswith("?")}]
+
+        logger.info(f"GEMINI SERVICE RETURNING: {gemini_response}")
+        return gemini_response
+
     async def get_gemini_response(
         self,
         prompt: str,
@@ -136,113 +196,31 @@ class GeminiService(GeminiServiceInterface):
         context_conversations: Optional[List[Dict[str, Any]]] = None,
         max_items: int = 10,
         user_timezone: Optional[str] = None,
-        user_latitude: Optional[float] = None,
-        user_longitude: Optional[float] = None,
+        user_location: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Two-call flow (Point 1): first call = user-facing reply only; second call = skill schema (always).
-        Points 2 & 3: current time and user location injected from user_timezone / lat-lon.
+        Single async entry point for the full Gemini flow. Runs get_gemini_response_sync
+        in a thread (run_in_executor) so the event loop is not blocked. All callers
+        (assistant service, tests, etc.) use this; many concurrent requests are handled
+        in parallel without stacking on the event loop.
+
         """
-        try:
-            if last_conversations is None:
-                last_conversations = []
-            if key_context_data is None:
-                key_context_data = []
-            if context_conversations is None:
-                context_conversations = []
+        loop = asyncio.get_running_loop()
 
-            current_time_str, user_location_str = build_current_time_and_location_context(
-                user_timezone, user_latitude, user_longitude
-            )
-
-            # First call: reply only (no skills in schema)
-            gemini_response = await self._generate_response(
+        def run_sync():
+            return self.get_gemini_response_sync(
                 prompt,
-                key_context_data,
-                last_conversations,
-                context_conversations,
-                max_items,
-                use_google_search=False,
-                reply_only=True,
-                current_time_str=current_time_str,
-                user_location_str=user_location_str,
+                key_context_data=key_context_data or [],
+                last_conversations=last_conversations or [],
+                context_conversations=context_conversations or [],
+                max_items=max_items,
+                user_timezone=user_timezone,
+                user_location=user_location,
             )
-            if not isinstance(gemini_response, dict):
-                gemini_response = {
-                    "server_reply": str(gemini_response),
-                    "app_params": [{"question": False}],
-                    "interaction_params": {
-                        "relevant_for_context": False,
-                        "context_priority": 1,
-                        "relevant_info": "",
-                    },
-                }
 
-            first_reply = gemini_response.get("server_reply", "")
+        return await loop.run_in_executor(None, run_sync)
 
-            # Previous turn for second-call context (most recent conversation before this request)
-            previous_user_req = None
-            previous_assistant_reply = None
-            if context_conversations:
-                prev = context_conversations[0]
-                previous_user_req = prev.get("user_input")
-                previous_assistant_reply = prev.get("server_reply")
-
-            # Second call: skill schema only — single source of truth for skills
-            skills_from_second = await self._generate_skill_calls(
-                user_req=prompt,
-                first_reply=first_reply,
-                current_time_str=current_time_str,
-                user_location_str=user_location_str,
-                previous_user_req=previous_user_req,
-                previous_assistant_reply=previous_assistant_reply,
-            )
-            gemini_response["skills"] = skills_from_second
-
-            # Execute Google Search when second call returned GoogleSearchSkill
-            if gemini_response.get("skills"):
-                for skill in gemini_response["skills"]:
-                    if skill.get("name") == "GoogleSearchSkill" and skill.get("action") == "activate":
-                        logger.info("GoogleSearchSkill from second call, activating Google Search")
-                        search_response = await self._generate_response(
-                            prompt,
-                            key_context_data,
-                            last_conversations,
-                            context_conversations,
-                            max_items,
-                            use_google_search=True,
-                            reply_only=True,
-                            current_time_str=current_time_str,
-                            user_location_str=user_location_str,
-                        )
-                        if self._gemini_major_version() >= 3 and isinstance(search_response, dict):
-                            gemini_response["server_reply"] = search_response.get("server_reply", "")
-                            gemini_response["app_params"] = search_response.get("app_params", [{"question": False}])
-                            if search_response.get("interaction_params"):
-                                gemini_response["interaction_params"] = search_response["interaction_params"]
-                        else:
-                            search_text = str(search_response)
-                            gemini_response["server_reply"] = search_text
-                            gemini_response["app_params"] = [
-                                {"question": search_text.strip().endswith("?")}
-                            ]
-                        gemini_response["skills"] = [
-                            s for s in gemini_response["skills"] if s.get("name") != "GoogleSearchSkill"
-                        ]
-                        break
-
-            if isinstance(gemini_response, dict) and "server_reply" in gemini_response:
-                server_reply = gemini_response.get("server_reply", "").strip()
-                gemini_response["app_params"] = [{"question": server_reply.endswith("?")}]
-
-            logger.info(f"GEMINI SERVICE RETURNING: {gemini_response}")
-            return gemini_response
-
-        except Exception as e:
-            logger.error(f"Error getting Gemini response: {e}")
-            raise
-
-    async def _generate_response(
+    def _generate_response(
         self,
         prompt: str,
         key_context_data: List[Dict[str, Any]],
@@ -253,14 +231,16 @@ class GeminiService(GeminiServiceInterface):
         reply_only: bool = False,
         current_time_str: str = "",
         user_location_str: str = "",
+        user_timezone: Optional[str] = None,
     ) -> Union[str, Dict[str, Any]]:
         """
-        Internal method to generate response with or without Google Search tool.
+        Internal sync method to generate response with or without Google Search tool.
         When reply_only=True, schema has no skills field (first call).
+        user_timezone: used to format timestamps in context to user's local time.
         """
         fixed_context = self._build_fixed_context(max_items, use_google_search, reply_only=reply_only)
         context_data_text = self.context_service.build_optimized_context(
-            key_context_data, context_conversations, ""
+            key_context_data, context_conversations, "", user_timezone=user_timezone
         )
         time_and_location = ""
         if current_time_str:
@@ -291,7 +271,6 @@ class GeminiService(GeminiServiceInterface):
         response_schema = self._build_response_schema(reply_only=reply_only)
 
         if tools and not use_structured_output_with_tools:
-            # Pre-Gemini 3: when using tools, no structured output (natural language only)
             generate_content_config = types.GenerateContentConfig(
                 max_output_tokens=2500,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
@@ -299,8 +278,6 @@ class GeminiService(GeminiServiceInterface):
                 system_instruction=[types.Part.from_text(text=fixed_context)],
             )
         else:
-            # No tools, or Gemini 3+: structured output (with or without tools)
-            # When not using tools and model >= 3, use thinking_level (low = minimal latency/cost)
             if not tools and self._gemini_major_version() >= 3:
                 thinking_config = types.ThinkingConfig(thinking_level="low")  # type: ignore[call-arg]
             else:
@@ -317,13 +294,7 @@ class GeminiService(GeminiServiceInterface):
             generate_content_config = types.GenerateContentConfig(**config_kwargs)
 
         logger.info(f"Sending user prompt to Gemini: {prompt}")
-        response_text = ""
-        for chunk in self.client.models.generate_content_stream(
-            model=self.model,
-            contents=contents,
-            config=generate_content_config,
-        ):
-            response_text += chunk.text or ""
+        response_text = self._sync_first_call(self.model, contents, generate_content_config)
 
         if not response_text.strip():
             logger.error("Received empty response from Gemini API")
@@ -458,7 +429,11 @@ class GeminiService(GeminiServiceInterface):
                     required=["name", "action"],
                 ),
             )
-        return types.Schema(type=types.Type.OBJECT, properties=properties, required=["server_reply", "interaction_params"])
+        return types.Schema(
+            type=types.Type.OBJECT,
+            properties=properties,
+            required=["server_reply", "app_params", "interaction_params"],
+        )
 
     def _build_skill_function_declarations(self) -> List[types.FunctionDeclaration]:
         """Function declarations for second call (skill schema only)."""
@@ -514,7 +489,7 @@ class GeminiService(GeminiServiceInterface):
             ),
         ]
 
-    async def _generate_skill_calls(
+    def _generate_skill_calls(
         self,
         user_req: str,
         first_reply: str,
@@ -525,7 +500,7 @@ class GeminiService(GeminiServiceInterface):
     ) -> List[Dict[str, Any]]:
         """
         Second call (always): skills selector only. Model can only return function_call(s)
-        per the API; no other fields. Context explains the situation so it picks the right skills.
+        per the API; no other fields. Sync; run in thread from assistant service.
         """
         system = (
             "You are the skills selector. You are not the assistant.\n\n"

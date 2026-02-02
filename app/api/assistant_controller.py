@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, Query
 from app.models.dtos import UserRequest, ServerResponse
 from app.services.assistant_service import AssistantService
 from app.api.auth_controller import get_current_user
@@ -29,8 +30,7 @@ async def assistant_endpoint(
             request.user_req,
             system_message=request.system_message,
             timezone=request.timezone,
-            latitude=request.latitude,
-            longitude=request.longitude,
+            location=request.location,
         )
         logger.info(f"Response sent for user {user_id}: {response.server_reply[:100]}...")
         return response
@@ -53,12 +53,17 @@ async def assistant_endpoint(
 async def get_conversation_history(
     page: int = 1,
     page_size: int = 10,
+    timezone: Optional[str] = Query(
+        None,
+        description="Optional IANA timezone (e.g. America/Argentina/Buenos_Aires). If provided, timestamps (stored UTC) are returned in this timezone.",
+    ),
     current_user: dict = Depends(get_current_user),
     assistant_service: AssistantService = Depends(get_assistant_service)
 ):
     """
     Get user's conversation history with pagination.
     Requires JWT authentication.
+    Pass optional `timezone` so conversation timestamps are returned in the user's timezone.
     """
     try:
         user_id = current_user.get("user_id")
@@ -66,7 +71,7 @@ async def get_conversation_history(
             raise HTTPException(status_code=401, detail="Invalid user token")
             
         history = await assistant_service.get_user_conversation_history(
-            user_id, page, page_size
+            user_id, page, page_size, timezone=timezone
         )
         return history
     except HTTPException:

@@ -72,15 +72,17 @@ class AssistantServiceInterface(ABC):
         max_items: int = 10,
         system_message: Optional[SystemMessage] = None,
         timezone: Optional[str] = None,
-        latitude: Optional[float] = None,
-        longitude: Optional[float] = None,
+        location: Optional[str] = None,
     ) -> ServerResponse:
         """Handle user request and return assistant response"""
         pass
     
     @abstractmethod
-    async def get_user_conversation_history(self, user_id: str, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
-        """Get user's conversation history with pagination"""
+    async def get_user_conversation_history(
+        self, user_id: str, page: int = 1, page_size: int = 10, timezone: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get user's conversation history with pagination.
+        timezone: if provided, timestamps (stored UTC) are returned in this timezone."""
         pass
 
 
@@ -96,8 +98,7 @@ class GeminiServiceInterface(ABC):
         context_conversations: Optional[List[Dict[str, Any]]] = None,
         max_items: int = 10,
         user_timezone: Optional[str] = None,
-        user_latitude: Optional[float] = None,
-        user_longitude: Optional[float] = None,
+        user_location: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get response from Gemini AI"""
         pass
@@ -110,8 +111,10 @@ class ContextServiceInterface(ABC):
     def build_optimized_context(self, 
                               key_context_data: List[Dict[str, Any]], 
                               context_conversations: List[Dict[str, Any]],
-                              fixed_context: str) -> str:
-        """Build optimized context with character limits and smart prioritization"""
+                              fixed_context: str,
+                              user_timezone: Optional[str] = None) -> str:
+        """Build optimized context with character limits and smart prioritization.
+        user_timezone: if provided, timestamps (stored UTC) are formatted in this timezone."""
         pass
     
     @abstractmethod

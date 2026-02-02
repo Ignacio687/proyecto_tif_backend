@@ -3,10 +3,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
-    # Database settings
-    MONGODB_URI: str = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
-    MONGODB_DB: str = os.environ.get("MONGODB_DB", "tif_db")
+    # Database settings: read at access time so integration tests can override
+    # via os.environ before the app connects (avoids .env URI when running pytest tests/)
+    @property
+    def MONGODB_URI(self) -> str:
+        return os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
+
+    @property
+    def MONGODB_DB(self) -> str:
+        return os.environ.get("MONGODB_DB", "tif_db")
     
     # AI Service settings
     GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")

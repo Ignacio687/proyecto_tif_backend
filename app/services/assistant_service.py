@@ -1,11 +1,34 @@
 """
-Assistant service implementation for handling user interactions
+Assistant service implementation for handling user interactions.
+Datetimes are stored in UTC; when timezone is provided they are converted for display.
+All Gemini work runs off the event loop via get_gemini_response (async), so many users
+can be handled concurrently without stacking on the event loop.
 """
 import json
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional, List
 from app.models.dtos import ServerResponse, SystemMessage
 from app.services.interfaces import AssistantServiceInterface
 from app.logger import logger
+
+
+def _format_timestamp_for_response(dt: Any, user_timezone: Optional[str] = None) -> str:
+    """Format a datetime (UTC in DB) for API response; convert to user_timezone if provided."""
+    if dt is None:
+        return ""
+    if not isinstance(dt, datetime):
+        return str(dt)
+    if getattr(dt, "tzinfo", None) is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if user_timezone:
+        try:
+            tz = ZoneInfo(user_timezone)
+            local = dt.astimezone(tz)
+            return local.isoformat()
+        except Exception as e:
+            logger.debug("Invalid timezone %s: %s", user_timezone, e)
+    return dt.isoformat()
 
 
 class AssistantService(AssistantServiceInterface):
@@ -39,8 +62,7 @@ class AssistantService(AssistantServiceInterface):
         max_items: int = 10,
         system_message: Optional[SystemMessage] = None,
         timezone: Optional[str] = None,
-        latitude: Optional[float] = None,
-        longitude: Optional[float] = None,
+        location: Optional[str] = None,
     ) -> ServerResponse:
         """Handle user request and return assistant response"""
         try:
@@ -75,7 +97,6 @@ class AssistantService(AssistantServiceInterface):
                 
                 logger.info(f"Patch requested. Original query: '{user_req}', Additional context provided")
                 
-                # Get response with enhanced context for patch request
                 gemini_reply = await self.gemini_service.get_gemini_response(
                     enhanced_prompt,
                     key_context_data=key_context_data,
@@ -83,15 +104,13 @@ class AssistantService(AssistantServiceInterface):
                     context_conversations=last_conversations,
                     max_items=max_items,
                     user_timezone=timezone,
-                    user_latitude=latitude,
-                    user_longitude=longitude,
+                    user_location=location,
                 )
                 
                 # Update the last conversation in database with the patched response
                 await self._update_last_conversation_with_patch(user_id, gemini_reply.get('server_reply', ''))
                 logger.info(f"Updated last conversation for user {user_id} with patched response")
             else:
-                # Get Gemini response using the new architecture for normal requests
                 gemini_reply = await self.gemini_service.get_gemini_response(
                     user_req,
                     key_context_data=key_context_data,
@@ -99,8 +118,7 @@ class AssistantService(AssistantServiceInterface):
                     context_conversations=last_conversations,
                     max_items=max_items,
                     user_timezone=timezone,
-                    user_latitude=latitude,
-                    user_longitude=longitude,
+                    user_location=location,
                 )
                 
                 # Save the conversation normally only if it's not a patch request
@@ -166,8 +184,11 @@ class AssistantService(AssistantServiceInterface):
             logger.error(f"Error handling user request for user {user_id}: {e}")
             raise
     
-    async def get_user_conversation_history(self, user_id: str, page: int = 1, page_size: int = 30) -> Dict[str, Any]:
-        """Get user's conversation history with pagination"""
+    async def get_user_conversation_history(
+        self, user_id: str, page: int = 1, page_size: int = 30, timezone: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get user's conversation history with pagination.
+        timezone: if provided, timestamps (stored UTC) are returned in this timezone (ISO format)."""
         try:
             skip = (page - 1) * page_size
             conversations = await self.conversation_repository.get_user_conversations(
@@ -176,12 +197,12 @@ class AssistantService(AssistantServiceInterface):
             
             total_count = await self.conversation_repository.count_user_conversations(user_id)
             
-            # Convert to dict format for response
+            # Convert to dict format for response; timestamps in user timezone if provided
             conversation_list = [
                 {
                     "user_input": conv.user_input,
                     "server_reply": conv.server_reply,
-                    "timestamp": conv.timestamp
+                    "timestamp": _format_timestamp_for_response(conv.timestamp, timezone),
                 }
                 for conv in conversations
             ]

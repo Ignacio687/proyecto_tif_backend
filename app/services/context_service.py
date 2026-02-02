@@ -1,10 +1,32 @@
 """
-Context management service for handling AI context building and optimization
+Context management service for handling AI context building and optimization.
+Datetimes are stored in UTC in the DB; when user_timezone is provided they are
+formatted in that timezone for context and display.
 """
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.logger import logger
 from app.services.interfaces import ContextServiceInterface
+
+
+def _format_timestamp(dt: Any, user_timezone: Optional[str] = None) -> str:
+    """Format a datetime (UTC in DB) for display; convert to user_timezone if provided, else UTC."""
+    if dt is None:
+        return ""
+    if not isinstance(dt, datetime):
+        return str(dt)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if user_timezone:
+        try:
+            tz = ZoneInfo(user_timezone)
+            local = dt.astimezone(tz)
+            return local.strftime("%Y-%m-%d %H:%M %Z")
+        except Exception as e:
+            logger.debug("Invalid timezone %s: %s", user_timezone, e)
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
 class ContextService(ContextServiceInterface):
@@ -18,19 +40,21 @@ class ContextService(ContextServiceInterface):
     def build_optimized_context(self, 
                               key_context_data: List[Dict[str, Any]], 
                               context_conversations: List[Dict[str, Any]],
-                              fixed_context: str) -> str:
-        """Build optimized context with character limits and smart prioritization"""
-        
+                              fixed_context: str,
+                              user_timezone: Optional[str] = None) -> str:
+        """Build optimized context with character limits and smart prioritization.
+        user_timezone: if provided, timestamps are formatted in this timezone (stored as UTC in DB).
+        """
         # Start with fixed context
         instruction = fixed_context
         
         # Add key context with optimization
-        key_context_section = self._build_key_context_section(key_context_data)
+        key_context_section = self._build_key_context_section(key_context_data, user_timezone)
         if key_context_section:
             instruction += "\n\n" + key_context_section
         
         # Add conversation context with optimization
-        conversation_section = self._build_conversation_section(context_conversations)
+        conversation_section = self._build_conversation_section(context_conversations, user_timezone)
         if conversation_section:
             instruction += "\n\n" + conversation_section
         
@@ -42,8 +66,10 @@ class ContextService(ContextServiceInterface):
         
         return instruction
     
-    def _build_key_context_section(self, key_context_data: List[Dict[str, Any]]) -> Optional[str]:
-        """Build key context section with character limits and priority sorting"""
+    def _build_key_context_section(
+        self, key_context_data: List[Dict[str, Any]], user_timezone: Optional[str] = None
+    ) -> Optional[str]:
+        """Build key context section with character limits and priority sorting."""
         if not key_context_data:
             return None
             
@@ -54,7 +80,8 @@ class ContextService(ContextServiceInterface):
         sorted_key_context = sorted(key_context_data, key=lambda x: x.get('context_priority', 0), reverse=True)
         
         for i, context in enumerate(sorted_key_context, 1):
-            context_line = f"{i}. [{context.get('timestamp', '')} | priority: {context.get('context_priority', '')}] {context['relevant_info']}\n"
+            ts_str = _format_timestamp(context.get("timestamp"), user_timezone)
+            context_line = f"{i}. [{ts_str} | priority: {context.get('context_priority', '')}] {context['relevant_info']}\n"
             
             if len(key_context_content) + len(context_line) > self.max_key_context_chars:
                 logger.debug(f"Key context truncated at {len(key_context_content)} characters, skipping {len(sorted_key_context) - i + 1} entries")
@@ -64,8 +91,12 @@ class ContextService(ContextServiceInterface):
         
         return section + key_context_content if key_context_content else None
     
-    def _build_conversation_section(self, context_conversations: List[Dict[str, Any]]) -> Optional[str]:
-        """Build conversation section with character limits and recency priority"""
+    def _build_conversation_section(
+        self, context_conversations: List[Dict[str, Any]], user_timezone: Optional[str] = None
+    ) -> Optional[str]:
+        """Build conversation section with character limits and recency priority.
+        Timestamps (stored UTC) are formatted in user_timezone if provided.
+        """
         if not context_conversations:
             return None
             
@@ -76,13 +107,13 @@ class ContextService(ContextServiceInterface):
         for conv in reversed(context_conversations):
             user_input = conv.get('user_input', '')
             server_reply = conv.get('server_reply', '')
-            timestamp = conv.get('timestamp', None)
+            ts_str = _format_timestamp(conv.get('timestamp'), user_timezone)
             
             clean_reply = server_reply
             if clean_reply.lower().startswith('assistant:'):
                 clean_reply = clean_reply[len('assistant:'):].strip()
             
-            conv_entry = f"User: {user_input} (at {timestamp})\nAssistant: {clean_reply}\n\n"
+            conv_entry = f"User: {user_input} (at {ts_str})\nAssistant: {clean_reply}\n\n"
             
             if len(conversation_content) + len(conv_entry) > self.max_conversation_chars:
                 logger.debug(f"Conversation history truncated at {len(conversation_content)} characters")

@@ -30,14 +30,20 @@ MONGO_TEST_PASS = "test"
 @pytest.fixture(scope="session")
 def mongo_container():
     """Start a real MongoDB container for the test session (ephemeral test DB)."""
+    import docker
     from testcontainers.mongodb import MongoDbContainer
 
-    with MongoDbContainer(
-        "mongo:7",
-        username=MONGO_TEST_USER,
-        password=MONGO_TEST_PASS,
-    ) as mongo:
-        yield mongo
+    try:
+        with MongoDbContainer(
+            "mongo:7",
+            username=MONGO_TEST_USER,
+            password=MONGO_TEST_PASS,
+        ) as mongo:
+            yield mongo
+    except docker.errors.DockerException as e:
+        pytest.skip(
+            f"Docker unavailable or timed out (required for integration tests): {e}"
+        )
 
 
 @pytest.fixture(scope="session")
