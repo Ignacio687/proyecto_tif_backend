@@ -41,6 +41,22 @@ CALL_SKILL_PROMPTS = [
     ("I want to call the office", "Just call the contact Office"),
 ]
 
+# ---- Call by number: (user_req, expected_number) — response must include ONLY contact_phone with this number ----
+CALL_BY_NUMBER_PROMPTS = [
+    ("Call 5642612345", "5642612345"),
+    ("Dial 54911 4567 8900", "5491145678900"),
+    ("Call my mum, its number is 5642612345", "5642612345"),
+    ("Ring 555-1234", "5551234"),
+]
+
+# ---- Call by name only: (user_req, expected_name) — response must include ONLY contact_name with this name ----
+CALL_BY_NAME_ONLY_PROMPTS = [
+    ("Call John", "John"),
+    ("Call Mom", "Mom"),
+    ("Can you call María?", "María"),
+    ("Dial the office", "office"),
+]
+
 # ---- Call with prior context: (context_message, ambiguous_request, expected_contact_name) ----
 # First message establishes who; second is ambiguous so the model must use conversation context.
 CALL_WITH_CONTEXT_SCENARIOS = [
@@ -268,12 +284,100 @@ class TestCallSkillFlow:
             parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
         except (TypeError, json.JSONDecodeError):
             parsed = {}
-        assert "contact_name" in parsed, (
-            f"Call skill params.data must contain contact_name. Got: {parsed}"
-        )
         contact_name = (parsed.get("contact_name") or "").strip()
-        assert len(contact_name) > 0, (
-            f"contact_name must be non-empty. Got: {parsed}"
+        contact_phone = (parsed.get("contact_phone") or "").strip()
+        assert contact_name or contact_phone, (
+            f"Call skill params.data must contain contact_name or contact_phone (at least one non-empty). Got: {parsed}"
+        )
+        assert not (contact_name and contact_phone), (
+            f"Call skill must have exactly one of contact_name or contact_phone. Got: {parsed}"
+        )
+
+    @pytest.mark.parametrize("user_req,expected_number", CALL_BY_NUMBER_PROMPTS)
+    def test_call_by_number_returns_only_contact_phone_with_given_number(
+        self, client, auth_token_fresh_user, user_req, expected_number
+    ):
+        """When the user provides a phone number, response must include ONLY contact_phone containing that number."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={"user_req": user_req},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200, f"Request failed: {response.text[:200]}"
+        data = response.json()
+        skills = data.get("skills") or []
+        call_skills = [
+            s
+            for s in skills
+            if (s.get("name") or "").lower().find("call") != -1
+            and (s.get("action") or "").lower() == "call_contact"
+        ]
+        assert len(call_skills) >= 1, (
+            f"Expected CallContactSkill for number request '{user_req}'. Got skills: {skills}"
+        )
+        params = call_skills[0].get("params") or {}
+        data_str = params.get("data")
+        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
+        try:
+            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+        except (TypeError, json.JSONDecodeError):
+            parsed = {}
+        contact_name = (parsed.get("contact_name") or "").strip()
+        contact_phone = (parsed.get("contact_phone") or "").strip()
+        assert contact_phone, (
+            f"For number request '{user_req}' model must return contact_phone. Got: {parsed}"
+        )
+        assert not contact_name, (
+            f"For number request response must have only contact_phone, not contact_name. Got: {parsed}"
+        )
+        # Response must contain the number we sent (compare normalized digits)
+        expected_digits = "".join(c for c in expected_number if c.isdigit())
+        actual_digits = "".join(c for c in contact_phone if c.isdigit())
+        assert expected_digits in actual_digits or actual_digits in expected_digits, (
+            f"contact_phone should contain the requested number {expected_number!r}. Got: {contact_phone!r}"
+        )
+
+    @pytest.mark.parametrize("user_req,expected_name", CALL_BY_NAME_ONLY_PROMPTS)
+    def test_call_by_name_returns_only_contact_name_with_given_name(
+        self, client, auth_token_fresh_user, user_req, expected_name
+    ):
+        """When the user provides only a name (no number), response must include ONLY contact_name containing that name."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={"user_req": user_req},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200, f"Request failed: {response.text[:200]}"
+        data = response.json()
+        skills = data.get("skills") or []
+        call_skills = [
+            s
+            for s in skills
+            if (s.get("name") or "").lower().find("call") != -1
+            and (s.get("action") or "").lower() == "call_contact"
+        ]
+        assert len(call_skills) >= 1, (
+            f"Expected CallContactSkill for name request '{user_req}'. Got skills: {skills}"
+        )
+        params = call_skills[0].get("params") or {}
+        data_str = params.get("data")
+        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
+        try:
+            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
+        except (TypeError, json.JSONDecodeError):
+            parsed = {}
+        contact_name = (parsed.get("contact_name") or "").strip()
+        contact_phone = (parsed.get("contact_phone") or "").strip()
+        assert contact_name, (
+            f"For name request '{user_req}' model must return contact_name. Got: {parsed}"
+        )
+        assert not contact_phone, (
+            f"For name-only request response must have only contact_name, not contact_phone. Got: {parsed}"
+        )
+        assert expected_name.lower() in contact_name.lower(), (
+            f"contact_name should contain the requested name {expected_name!r}. Got: {contact_name!r}"
         )
 
 

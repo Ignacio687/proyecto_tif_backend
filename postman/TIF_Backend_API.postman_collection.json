@@ -146,7 +146,23 @@
               "raw": "{\n  \"user_req\": \"Hello, how are you?\"\n}"
             },
             "url": "{{base_url}}/api/v1/assistant",
-            "description": "Send user message to assistant (normal flow). Optional body fields: timezone (IANA), location (human-readable string) for time/location context. Requires valid access_token."
+            "description": "Send user message to assistant (normal flow). Optional body fields: timezone (IANA), location (human-readable string) for time/location context. Requires valid access_token. Response skills: for CallContactSkill, params.data has exactly one of contact_name or contact_phone (number preferred when both given)."
+          }
+        },
+        {
+          "name": "Assistant (call by number)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_req\": \"Call 5642612345\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/assistant",
+            "description": "When the user provides a phone number, response includes CallContactSkill with contact_phone only (no contact_name). Same for e.g. 'Call my mum, its number is 5642612345'."
           }
         },
         {
@@ -178,7 +194,7 @@
               "raw": "{\n  \"user_req\": \"Call John\",\n  \"system_message\": {\n    \"patch_last\": true,\n    \"skill_failure_message\": \"Contact not found\",\n    \"contacts_list\": [\"Jane\", \"Bob\"]\n  }\n}"
             },
             "url": "{{base_url}}/api/v1/assistant",
-            "description": "Patch last response (e.g. after skill failure) with system_message"
+            "description": "Patch last response (e.g. after skill failure) with system_message. contacts_list = similar contacts found (empty if none); not the full device contact list."
           }
         },
         {
@@ -189,7 +205,18 @@
               { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": "{{base_url}}/api/v1/conversations?page=1&page_size=10",
-            "description": "Get user conversation history with pagination"
+            "description": "Get user conversation history with pagination. Query: page (default 1), page_size (default 10), timezone (optional IANA, e.g. America/Argentina/Buenos_Aires). If timezone is provided, timestamps (stored UTC) are returned in that timezone."
+          }
+        },
+        {
+          "name": "Conversations (with timezone)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": "{{base_url}}/api/v1/conversations?page=1&page_size=10&timezone=America/Argentina/Buenos_Aires",
+            "description": "Same as Conversations; optional timezone query param so each conversation's timestamp is returned in the user's timezone (ISO format)."
           }
         }
       ]

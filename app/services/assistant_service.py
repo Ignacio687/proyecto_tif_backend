@@ -89,11 +89,14 @@ class AssistantService(AssistantServiceInterface):
                 if system_message.skill_failure_message:
                     enhanced_prompt += f"SKILL EXECUTION FAILED: {system_message.skill_failure_message} "
                 
-                # Add contacts list if provided with specific message about contact not found
-                if system_message.contacts_list:
-                    contacts_str = ", ".join(system_message.contacts_list)
-                    enhanced_prompt += f"IMPORTANT: The contact requested was NOT FOUND. Here are the available contacts: {contacts_str}. "
-                    enhanced_prompt += "Please inform the user that the contact was not found and provide the available options. "
+                # Add similar contacts list when contact was not found (empty = no similar contacts found)
+                if system_message.contacts_list is not None:
+                    if system_message.contacts_list:
+                        contacts_str = ", ".join(system_message.contacts_list)
+                        enhanced_prompt += f"IMPORTANT: The contact requested was NOT FOUND. Here are similar contacts (if any): {contacts_str}. "
+                    else:
+                        enhanced_prompt += "IMPORTANT: The contact requested was NOT FOUND. No similar contacts were found. "
+                    enhanced_prompt += "Please inform the user that the contact was not found and, if similar contacts were provided, suggest those options; otherwise say no similar contacts were found. "
                 
                 logger.info(f"Patch requested. Original query: '{user_req}', Additional context provided")
                 

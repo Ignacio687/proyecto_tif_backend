@@ -1,103 +1,24 @@
-- **Point 1 – Skills via Function Calling (fix unreliable skill invocation)** *(implemented)*
+- **Point 1 – The contact list returned by the app on a patch request should be taken as similar contacts list (empty if no similar contacts found), not the complete contacts list.** ✅ Done
 
-  **Problem:** The model is unreliable at calling skills. Integration tests show it often returns `skills: None` for clear call instructions ("Call John", "Ring my brother", etc.) and does not consistently trigger the Google Search tool for search-style prompts. The model is losing focus on the long system context: it has to follow a big JSON schema and a long list of skill descriptions in plain text, so it frequently omits or misuses the skills array.
+- **Point 2 – The contact parameter in call skill should be able to take a number as input, directly provided by the user. For example call mi mum, its number is 56426...** ✅ Done (response has exactly one of contact_name or contact_phone; number preferred when both given)
 
-  **Solution:** Two calls. First call generates the **user-facing reply** and only knows **which skills exist** (no schema detail). Second call, **only when a skill was selected**, generates the **skill schema** (function call + params) with minimal context to save tokens. Google Search stays as today (handled directly by the API).
-
-  1. **First call:** Model generates the **user response** (the reply the user sees). It only knows the **list of available skills** (names / high-level), not the full function declarations or parameter schemas. It produces the natural-language reply; it may or may not indicate that a skill should be called (we do not rely on this).
-  2. **Second call (always):** Run **always**, not only when the first call “selected” a skill. This call is **only for generating the skill schema** (exact function name + parameters). Inputs are **minimal**: user request, first call response, and system context—**not** the full first-call context, to save tokens. The second call decides from (user_req, first_reply, system context) whether any skill is needed and with what params; it outputs the structured function call(s) or nothing. Backend executes the skill(s) returned by the second call. **Why always:** If we only ran the second call when the first “selected” a skill, we would still depend on the first call behaving correctly. When it misbehaves (e.g. does not select a skill when the user said “Call John”), we would never run the second call and would not fix the problem. By always running the second call, the second call is the single source of truth for “what skills to run”; the first call can focus on the reply, and we still get correct skill invocation even when the first call omits or mis-signals.
-  3. **No skill needed:** When the second call returns no function call, we simply return the first call’s response as-is.
-  4. **Concurrency:** The full Gemini flow (first + second call) runs in a thread via `get_gemini_response` (async → run_in_executor), so many concurrent user requests do not stack on the event loop.
-
-  Reference: https://ai.google.dev/gemini-api/docs/function-calling?hl=es-419&example=meeting .
-
+- **Point 3 - Fix consistant error on skill calls made by the second call, it should whait for the response if the response is a question, then call the skill when the user agrees to do it.**
     """
-        # To run this code you need to install the following dependencies:
-        # pip install google-genai
-
-        import base64
-        import os
-        from google import genai
-        from google.genai import types
-
-
-        def generate():
-            client = genai.Client(
-                api_key=os.environ.get("GEMINI_API_KEY"),
-            )
-
-            model = "gemini-2.5-flash-lite"
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text="""INSERT_INPUT_HERE"""),
-                    ],
-                ),
-            ]
-            tools = [
-                types.Tool(
-                    function_declarations=[
-                        types.FunctionDeclaration(
-                            name="getWeather",
-                            description="gets the weather for a requested city",
-                            parameters=genai.types.Schema(
-                                type = genai.types.Type.OBJECT,
-                                properties = {
-                                    "city": genai.types.Schema(
-                                        type = genai.types.Type.STRING,
-                                    ),
-                                },
-                            ),
-                        ),
-                    ])
-            ]
-            generate_content_config = types.GenerateContentConfig(
-                max_output_tokens=2500,
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=0,
-                ),
-                tools=tools,
-            )
-
-            for chunk in client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-                config=generate_content_config,
-            ):
-                print(chunk.text if chunk.function_calls is None else chunk.function_calls[0])
-
-        if __name__ == "__main__":
-            generate()
+        [2026-02-17T08:10:04.128506-0300] INFO - Sending user prompt to Gemini: el numero es 2645018867
+        [2026-02-17T08:10:06.750019-0300] DEBUG - Parsed JSON response: {'server_reply': 'Entendido, Ignacio. He actualizado el número de tu papá. ¿Quieres que lo llame ahora o prefieres que lo guarde con algún nombre específico?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': True, 'context_priority': 85, 'relevant_info': 'El número de teléfono actualizado del papá de Ignacio es 2645018867'}, 'context_updates': [{'entry_number': 2, 'new_priority': 0}]}
+        [2026-02-17T08:10:07.746333-0300] DEBUG - Second call returned skills: [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'data': '{"contact_phone": "2645018867"}'}}]
+        [2026-02-17T08:10:07.746463-0300] INFO - GEMINI SERVICE RETURNING: {'server_reply': 'Entendido, Ignacio. He actualizado el número de tu papá. ¿Quieres que lo llame ahora o prefieres que lo guarde con algún nombre específico?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': True, 'context_priority': 85, 'relevant_info': 'El número de teléfono actualizado del papá de Ignacio es 2645018867'}, 'context_updates': [{'entry_number': 2, 'new_priority': 0}], 'skills': [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'data': '{"contact_phone": "2645018867"}'}}]}
+        [2026-02-17T08:10:07.747980-0300] DEBUG - Saved conversation for user 6993e5800a7b9993a45b65ac
+        [2026-02-17T08:10:07.750800-0300] DEBUG - Updated key context priority for user 6993e5800a7b9993a45b65ac, context 699449a6d52d39b5496f4f78
+        [2026-02-17T08:10:07.750935-0300] DEBUG - Updated key context priority for user 6993e5800a7b9993a45b65ac, entry 2 (ID: 699449a6d52d39b5496f4f78) to priority 0
+        [2026-02-17T08:10:07.753288-0300] DEBUG - Saved new key context for user 6993e5800a7b9993a45b65ac: El número de teléfono actualizado del papá de Igna...
+        [2026-02-17T08:10:07.753393-0300] DEBUG - Saved current interaction key context for user 6993e5800a7b9993a45b65ac: El número de teléfono actualizado del papá de Igna...
+        [2026-02-17T08:10:07.755437-0300] DEBUG - Cleaned up 1 zero-priority contexts for user 6993e5800a7b9993a45b65ac
+        [2026-02-17T08:10:07.755568-0300] INFO - Response sent for user 6993e5800a7b9993a45b65ac: Entendido, Ignacio. He actualizado el número de tu papá. ¿Quieres que lo llame ahora o prefieres que...
+        INFO:     127.0.0.1:47506 - "POST /api/v1/assistant HTTP/1.1" 200 OK
     """
 
-- **Point 2 – User location / timezone in requests** *(implemented)*
-
-  **Problem:** We register all timestamps as UTC without taking into account the user's location. This causes time-related confusion (e.g. "tomorrow", "in the morning") and limits context (e.g. we can't infer local time for weather).
-
-  **Solution (current):** The app sends with every request:
-  - **Timezone** (optional): IANA identifier (e.g. `America/Argentina/Buenos_Aires`). Used for current time and for converting stored timestamps when building context and when sending to the app. If not provided, UTC is used.
-  - **Location** (optional): Human-readable location string (e.g. "Buenos Aires, Argentina"), **not** coordinates. Used directly as context for the model; never stored or geocoded.
-  - **Datetimes:** Stored **always in UTC** in the database. Converted to the user's timezone (if provided) when used in **key context and conversation sections** (prompts) and when returned in **GET /conversations** (optional query param `timezone`). So if the user changes timezone, previous datetimes show correctly in the current timezone.
-  - **No geocoding:** No reverse geocoding or coordinate-based services; location is a free-form string from the app.
-
-- **Point 3 – Current time and date in every request context** *(implemented)*
-
-  In the context of **every** request, always include the **current time and date** as seen by the user: either computed from the user's location/timezone (if sent) or UTC if not present. This allows the model to:
-  - Compare "now" with timestamps and relative times mentioned in previous conversations (e.g. "we talked about this yesterday", "remind me next Monday").
-  - Evaluate and reason about time and day in prior messages (e.g. "last week the user said…") with correct temporal grounding.
-
-- **Point 4 – Setting a Reminder and Send a Message (when implemented in the app)** *(backend done)*
-
-  Implement these skills on the backend so they are available to the model once the app supports them:
-  1. **Set reminder:** User can ask to be reminded at a specific time or after a delay (e.g. "remind me in 1 hour", "remind me tomorrow at 9"). Backend should schedule or store the reminder; use user timezone/location when provided for correct local time.
-  2. **Send a message:** User can ask to send a message to a contact (e.g. "text María", "send a WhatsApp to my brother saying I'll be late"). Backend should expose the skill; actual delivery depends on app integration (push, in-app, or external service).
-
-  Add them to the skill list and function-calling schema when the app is ready to handle the corresponding actions (notifications for reminders, messaging channel for send message).
-
----
-
-- **Point 5 – Long-term memory: conversation summarization + semantic retrieval (background job)**
+- **Point 3 – Long-term memory: conversation summarization + semantic retrieval (background job)**
 
   **Goal:** Build a "long-term memory" from relevant conversations. When the user talks about a topic over many turns (e.g. 20 chats about a project), the system maintains a running summary; when the conversation shifts or the topic ends, the summary is finalized, a short headline is generated, and the headline is embedded (vector) and stored. Future user requests are compared (e.g. vector similarity) to these stored headlines so the model can be given the **most relevant past summarized conversations** as context, without sending full chat history.
 
@@ -121,7 +42,7 @@
 
 ---
 
-- **Point 6 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
+- **Point 4 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
     """
         # To run this code you need to install the following dependencies:
         # pip install google-genai
@@ -277,12 +198,12 @@
 
 ---
 
-- **Point 7 – Erradicate this behaviors:**
+- **Point 5 – Erradicate this behaviors:**
 
     "server_reply": "Excelente, Ignacio. ¿Te gustaría que busque más información sobre algún tema en particular de las noticias o necesitás ayuda con otra cosa?" That follow up question should not be asked, the action was already done.0
 
 ---
 
-- **Point 8 – Retry logic for 503 in Gemini client** *(to consider)*
+- **Point 6 – Retry logic for 503 in Gemini client** *(to consider)*
 
   Consider adding retry logic for **503 (Service Unavailable)** responses from the Gemini API (e.g. deadline expired, model overloaded) so transient failures are retried and the client is more resilient.

@@ -14,7 +14,7 @@ def utc_now() -> datetime:
 class SystemMessage(BaseModel):
     """DTO for system messages from client"""
     patch_last: Optional[bool] = Field(None, description="Indicates this is a patch request for the last interaction")
-    contacts_list: Optional[List[str]] = Field(None, description="Complete list of contact names from user's device")
+    contacts_list: Optional[List[str]] = Field(None, description="Similar contacts found (e.g. fuzzy matches); empty if no similar contacts found. Not the full device contact list.")
     skill_failure_message: Optional[str] = Field(None, description="Message indicating a skill execution failed")
 
 
@@ -68,10 +68,11 @@ class ResendVerificationRequest(BaseModel):
 
 
 class Skill(BaseModel):
-    """DTO for assistant skills"""
+    """DTO for assistant skills.
+    For CallContactSkill: params.data contains exactly one of contact_name or contact_phone (number preferred when both given)."""
     name: str = Field(description="Name of the skill")
     action: str = Field(description="Action to be performed")
-    params: Dict[str, Any] = Field(description="Parameters for the skill")
+    params: Dict[str, Any] = Field(description="Parameters for the skill (e.g. data JSON string; for call_contact, exactly one of contact_name or contact_phone)")
 
 
 class ServerResponse(BaseModel):

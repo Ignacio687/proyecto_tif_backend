@@ -440,16 +440,20 @@ class GeminiService(GeminiServiceInterface):
         return [
             types.FunctionDeclaration(
                 name="call_contact",
-                description="Call or dial a contact by name. Use when the user asks to call, ring, or dial someone.",
+                description="Call or dial a contact by name or by phone number. Use when the user asks to call, ring, or dial someone. Return exactly ONE of contact_name or contact_phone (prefer contact_phone if both name and number are given).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "contact_name": types.Schema(
                             type=types.Type.STRING,
-                            description="Full name or how the user referred to the contact (e.g. 'John', 'Mom', 'my brother')",
+                            description="Full name or how the user referred to the contact (e.g. 'John', 'Mom', 'my brother'). Use when the user identifies the contact by name.",
+                        ),
+                        "contact_phone": types.Schema(
+                            type=types.Type.STRING,
+                            description="Phone number when the user provides it directly (e.g. 'call 5642612345', 'call my mum, her number is 56426...'). Use digits as given by the user; include country/area code if the user said it.",
                         ),
                     },
-                    required=["contact_name"],
+                    required=[],
                 ),
             ),
             types.FunctionDeclaration(
@@ -580,12 +584,19 @@ class GeminiService(GeminiServiceInterface):
             args = dict(getattr(fc, "args", None) or {})
 
             if name == "call_contact":
-                contact_name = args.get("contact_name", "").strip()
-                if contact_name:
+                contact_name = (args.get("contact_name") or "").strip()
+                contact_phone = (args.get("contact_phone") or "").strip()
+                if contact_name or contact_phone:
+                    # Only one field: prioritize number when both are given
+                    data: Dict[str, Any] = {}
+                    if contact_phone:
+                        data["contact_phone"] = contact_phone
+                    elif contact_name:
+                        data["contact_name"] = contact_name
                     skills.append({
                         "name": "CallContactSkill",
                         "action": "call_contact",
-                        "params": {"data": json.dumps({"contact_name": contact_name})},
+                        "params": {"data": json.dumps(data)},
                     })
             elif name == "send_message":
                 recipient = (args.get("recipient") or "").strip()
