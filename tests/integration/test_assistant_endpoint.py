@@ -8,7 +8,6 @@ Requirements:
 - Docker running (testcontainers starts a MongoDB container).
 """
 import asyncio
-import json
 import os
 import pytest
 from unittest.mock import patch
@@ -278,19 +277,13 @@ class TestCallSkillFlow:
         )
         skill = call_skills[0]
         params = skill.get("params") or {}
-        data_str = params.get("data")
-        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
-        try:
-            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-        except (TypeError, json.JSONDecodeError):
-            parsed = {}
-        contact_name = (parsed.get("contact_name") or "").strip()
-        contact_phone = (parsed.get("contact_phone") or "").strip()
+        contact_name = (params.get("contact_name") or "").strip()
+        contact_phone = (params.get("contact_phone") or "").strip()
         assert contact_name or contact_phone, (
-            f"Call skill params.data must contain contact_name or contact_phone (at least one non-empty). Got: {parsed}"
+            f"Call skill params must contain contact_name or contact_phone (at least one non-empty). Got: {params}"
         )
         assert not (contact_name and contact_phone), (
-            f"Call skill must have exactly one of contact_name or contact_phone. Got: {parsed}"
+            f"Call skill must have exactly one of contact_name or contact_phone. Got: {params}"
         )
 
     @pytest.mark.parametrize("user_req,expected_number", CALL_BY_NUMBER_PROMPTS)
@@ -317,19 +310,13 @@ class TestCallSkillFlow:
             f"Expected CallContactSkill for number request '{user_req}'. Got skills: {skills}"
         )
         params = call_skills[0].get("params") or {}
-        data_str = params.get("data")
-        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
-        try:
-            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-        except (TypeError, json.JSONDecodeError):
-            parsed = {}
-        contact_name = (parsed.get("contact_name") or "").strip()
-        contact_phone = (parsed.get("contact_phone") or "").strip()
+        contact_name = (params.get("contact_name") or "").strip()
+        contact_phone = (params.get("contact_phone") or "").strip()
         assert contact_phone, (
-            f"For number request '{user_req}' model must return contact_phone. Got: {parsed}"
+            f"For number request '{user_req}' model must return contact_phone. Got: {params}"
         )
         assert not contact_name, (
-            f"For number request response must have only contact_phone, not contact_name. Got: {parsed}"
+            f"For number request response must have only contact_phone, not contact_name. Got: {params}"
         )
         # Response must contain the number we sent (compare normalized digits)
         expected_digits = "".join(c for c in expected_number if c.isdigit())
@@ -362,19 +349,13 @@ class TestCallSkillFlow:
             f"Expected CallContactSkill for name request '{user_req}'. Got skills: {skills}"
         )
         params = call_skills[0].get("params") or {}
-        data_str = params.get("data")
-        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
-        try:
-            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-        except (TypeError, json.JSONDecodeError):
-            parsed = {}
-        contact_name = (parsed.get("contact_name") or "").strip()
-        contact_phone = (parsed.get("contact_phone") or "").strip()
+        contact_name = (params.get("contact_name") or "").strip()
+        contact_phone = (params.get("contact_phone") or "").strip()
         assert contact_name, (
-            f"For name request '{user_req}' model must return contact_name. Got: {parsed}"
+            f"For name request '{user_req}' model must return contact_name. Got: {params}"
         )
         assert not contact_phone, (
-            f"For name-only request response must have only contact_name, not contact_phone. Got: {parsed}"
+            f"For name-only request response must have only contact_name, not contact_phone. Got: {params}"
         )
         assert expected_name.lower() in contact_name.lower(), (
             f"contact_name should contain the requested name {expected_name!r}. Got: {contact_name!r}"
@@ -425,15 +406,9 @@ class TestCallSkillWithContext:
         )
         skill = call_skills[0]
         params = skill.get("params") or {}
-        data_str = params.get("data")
-        assert data_str is not None, f"Call skill must have params.data. Got params: {params}"
-        try:
-            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-        except (TypeError, json.JSONDecodeError):
-            parsed = {}
-        contact_name = (parsed.get("contact_name") or "").strip()
+        contact_name = (params.get("contact_name") or "").strip()
         assert len(contact_name) > 0, (
-            f"contact_name must be non-empty after context. Got: {parsed}"
+            f"contact_name must be non-empty after context. Got: {params}"
         )
         # Expected name may appear as full name or first name (e.g. "María García" -> "María")
         expected_lower = expected_contact_name.lower()
@@ -472,19 +447,13 @@ class TestSendMessageSkillFlow:
         )
         skill = msg_skills[0]
         params = skill.get("params") or {}
-        data_str = params.get("data")
-        assert data_str is not None, f"SendMessage skill must have params.data. Got params: {params}"
-        try:
-            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-        except (TypeError, json.JSONDecodeError):
-            parsed = {}
-        assert "recipient" in parsed and "message" in parsed, (
-            f"SendMessage params.data must contain recipient and message. Got: {parsed}"
+        assert "recipient" in params and "message" in params, (
+            f"SendMessage params must contain recipient and message. Got: {params}"
         )
-        recipient = (parsed.get("recipient") or "").strip()
-        message = (parsed.get("message") or "").strip()
+        recipient = (params.get("recipient") or "").strip()
+        message = (params.get("message") or "").strip()
         assert len(recipient) > 0 and len(message) > 0, (
-            f"recipient and message must be non-empty. Got: {parsed}"
+            f"recipient and message must be non-empty. Got: {params}"
         )
 
 
@@ -516,17 +485,12 @@ class TestFollowUpWithoutQuestionMark:
         placeholders = {p.lower().strip() for p in placeholder_message_values if p is not None}
         for skill in msg_skills:
             params = skill.get("params") or {}
-            data_str = params.get("data")
-            if not data_str:
+            if not params:
                 continue
-            try:
-                parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-            except (TypeError, json.JSONDecodeError):
-                continue
-            message = (parsed.get("message") or "").strip().lower()
+            message = (params.get("message") or "").strip().lower()
             assert message not in placeholders, (
                 f"SendMessageSkill must not use placeholder message when assistant asks for content. "
-                f"Got message: {repr(parsed.get('message'))}. Reply: {(data.get('server_reply') or '')[:150]}"
+                f"Got message: {repr(params.get('message'))}. Reply: {(data.get('server_reply') or '')[:150]}"
             )
 
     @pytest.mark.parametrize(
@@ -562,17 +526,12 @@ class TestFollowUpWithoutQuestionMark:
         placeholders = {p.lower().strip() for p in placeholder_message_values if p is not None}
         for skill in msg_skills:
             params = skill.get("params") or {}
-            data_str = params.get("data")
-            if not data_str:
+            if not params:
                 continue
-            try:
-                parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-            except (TypeError, json.JSONDecodeError):
-                continue
-            message = (parsed.get("message") or "").strip().lower()
+            message = (params.get("message") or "").strip().lower()
             assert message not in placeholders, (
                 f"SendMessageSkill must not use placeholder when assistant asked for content. "
-                f"Got message: {repr(parsed.get('message'))}. Reply: {(data.get('server_reply') or '')[:150]}"
+                f"Got message: {repr(params.get('message'))}. Reply: {(data.get('server_reply') or '')[:150]}"
             )
 
 
@@ -608,19 +567,13 @@ class TestCreateReminderSkillFlow:
         )
         skill = reminder_skills[0]
         params = skill.get("params") or {}
-        data_str = params.get("data")
-        assert data_str is not None, f"CreateReminder skill must have params.data. Got params: {params}"
-        try:
-            parsed = json.loads(data_str) if isinstance(data_str, str) else data_str
-        except (TypeError, json.JSONDecodeError):
-            parsed = {}
-        assert "title" in parsed and "datetime" in parsed, (
-            f"CreateReminder params.data must contain title and datetime. Got: {parsed}"
+        assert "title" in params and "datetime" in params, (
+            f"CreateReminder params must contain title and datetime. Got: {params}"
         )
-        title = (parsed.get("title") or "").strip()
-        dt = (parsed.get("datetime") or "").strip()
+        title = (params.get("title") or "").strip()
+        dt = (params.get("datetime") or "").strip()
         assert len(title) > 0 and len(dt) > 0, (
-            f"title and datetime must be non-empty. Got: {parsed}"
+            f"title and datetime must be non-empty. Got: {params}"
         )
 
 

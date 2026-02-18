@@ -1,9 +1,72 @@
 """
 Data Transfer Objects (DTOs) for API requests and responses
 """
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field, EmailStr, model_validator
+from typing import Annotated, List, Dict, Any, Optional, Union, Literal
 from datetime import datetime, timezone
+
+
+# ---- Skill params (typed per skill) ----
+class CallContactParams(BaseModel):
+    """Exactly one of contact_name or contact_phone must be non-empty."""
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+
+    @model_validator(mode="after")
+    def exactly_one_identifier(self):
+        has_name = bool((self.contact_name or "").strip())
+        has_phone = bool((self.contact_phone or "").strip())
+        if not has_name and not has_phone:
+            raise ValueError("CallContactParams must have either contact_name or contact_phone")
+        if has_name and has_phone:
+            raise ValueError("CallContactParams must have exactly one of contact_name or contact_phone")
+        return self
+
+
+class SendMessageParams(BaseModel):
+    recipient: str = Field(description="Name of the recipient")
+    message: str = Field(description="Message body to send")
+
+
+class CreateReminderParams(BaseModel):
+    title: str = Field(description="Reminder title or description")
+    datetime: str = Field(description="Target date/time in ISO or YYYY-MM-DD HH:MM format")
+
+
+class GoogleSearchParams(BaseModel):
+    """No params for Google Search (executed server-side, filtered from client response)."""
+    pass
+
+
+# ---- Typed skill models (discriminated union on name) ----
+class CallContactSkill(BaseModel):
+    name: Literal["CallContactSkill"] = "CallContactSkill"
+    action: Literal["call_contact"] = "call_contact"
+    params: CallContactParams
+
+
+class SendMessageSkill(BaseModel):
+    name: Literal["SendMessageSkill"] = "SendMessageSkill"
+    action: Literal["send_message"] = "send_message"
+    params: SendMessageParams
+
+
+class CreateReminderSkill(BaseModel):
+    name: Literal["CreateReminderSkill"] = "CreateReminderSkill"
+    action: Literal["create_reminder"] = "create_reminder"
+    params: CreateReminderParams
+
+
+class GoogleSearchSkill(BaseModel):
+    name: Literal["GoogleSearchSkill"] = "GoogleSearchSkill"
+    action: Literal["activate"] = "activate"
+    params: GoogleSearchParams = Field(default_factory=GoogleSearchParams)
+
+
+Skill = Annotated[
+    Union[CallContactSkill, SendMessageSkill, CreateReminderSkill, GoogleSearchSkill],
+    Field(discriminator="name"),
+]
 
 
 def utc_now() -> datetime:
@@ -65,14 +128,6 @@ class PasswordResetConfirmRequest(BaseModel):
 class ResendVerificationRequest(BaseModel):
     """DTO for resending verification code"""
     email: EmailStr = Field(description="User email address")
-
-
-class Skill(BaseModel):
-    """DTO for assistant skills.
-    For CallContactSkill: params.data contains exactly one of contact_name or contact_phone (number preferred when both given)."""
-    name: str = Field(description="Name of the skill")
-    action: str = Field(description="Action to be performed")
-    params: Dict[str, Any] = Field(description="Parameters for the skill (e.g. data JSON string; for call_contact, exactly one of contact_name or contact_phone)")
 
 
 class ServerResponse(BaseModel):

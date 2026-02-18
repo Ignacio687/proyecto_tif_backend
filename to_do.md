@@ -1,8 +1,4 @@
-- **Point 1 – The contact list returned by the app on a patch request should be taken as similar contacts list (empty if no similar contacts found), not the complete contacts list.** ✅ Done
-
-- **Point 2 – The contact parameter in call skill should be able to take a number as input, directly provided by the user. For example call mi mum, its number is 56426...** ✅ Done (response has exactly one of contact_name or contact_phone; number preferred when both given)
-
-- **Point 3 - Fix consistant error on skill calls made by the second call, it should whait for the response if the response is a question, then call the skill when the user agrees to do it.**
+- **Point 1 - Fix consistant error on skill calls made by the second call, it should whait for the response if the response is a question, then call the skill when the user agrees to do it.**
     """
         [2026-02-17T08:10:04.128506-0300] INFO - Sending user prompt to Gemini: el numero es 2645018867
         [2026-02-17T08:10:06.750019-0300] DEBUG - Parsed JSON response: {'server_reply': 'Entendido, Ignacio. He actualizado el número de tu papá. ¿Quieres que lo llame ahora o prefieres que lo guarde con algún nombre específico?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': True, 'context_priority': 85, 'relevant_info': 'El número de teléfono actualizado del papá de Ignacio es 2645018867'}, 'context_updates': [{'entry_number': 2, 'new_priority': 0}]}
@@ -18,7 +14,7 @@
         INFO:     127.0.0.1:47506 - "POST /api/v1/assistant HTTP/1.1" 200 OK
     """
 
-- **Point 3 – Long-term memory: conversation summarization + semantic retrieval (background job)**
+- **Point 2 – Long-term memory: conversation summarization + semantic retrieval (background job)**
 
   **Goal:** Build a "long-term memory" from relevant conversations. When the user talks about a topic over many turns (e.g. 20 chats about a project), the system maintains a running summary; when the conversation shifts or the topic ends, the summary is finalized, a short headline is generated, and the headline is embedded (vector) and stored. Future user requests are compared (e.g. vector similarity) to these stored headlines so the model can be given the **most relevant past summarized conversations** as context, without sending full chat history.
 
@@ -42,7 +38,7 @@
 
 ---
 
-- **Point 4 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
+- **Point 3 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
     """
         # To run this code you need to install the following dependencies:
         # pip install google-genai
@@ -198,12 +194,12 @@
 
 ---
 
-- **Point 5 – Erradicate this behaviors:**
+- **Point 4 – Erradicate this behaviors:**
 
     "server_reply": "Excelente, Ignacio. ¿Te gustaría que busque más información sobre algún tema en particular de las noticias o necesitás ayuda con otra cosa?" That follow up question should not be asked, the action was already done.0
 
 ---
 
-- **Point 6 – Retry logic for 503 in Gemini client** *(to consider)*
+- **Point 5 – Retry logic for 503 in Gemini client** *(to consider)*
 
   Consider adding retry logic for **503 (Service Unavailable)** responses from the Gemini API (e.g. deadline expired, model overloaded) so transient failures are retried and the client is more resilient.

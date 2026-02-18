@@ -588,15 +588,15 @@ class GeminiService(GeminiServiceInterface):
                 contact_phone = (args.get("contact_phone") or "").strip()
                 if contact_name or contact_phone:
                     # Only one field: prioritize number when both are given
-                    data: Dict[str, Any] = {}
+                    params: Dict[str, Any] = {}
                     if contact_phone:
-                        data["contact_phone"] = contact_phone
+                        params["contact_phone"] = contact_phone
                     elif contact_name:
-                        data["contact_name"] = contact_name
+                        params["contact_name"] = contact_name
                     skills.append({
                         "name": "CallContactSkill",
                         "action": "call_contact",
-                        "params": {"data": json.dumps(data)},
+                        "params": params,
                     })
             elif name == "send_message":
                 recipient = (args.get("recipient") or "").strip()
@@ -605,7 +605,7 @@ class GeminiService(GeminiServiceInterface):
                     skills.append({
                         "name": "SendMessageSkill",
                         "action": "send_message",
-                        "params": {"data": json.dumps({"recipient": recipient, "message": message})},
+                        "params": {"recipient": recipient, "message": message},
                     })
             elif name == "create_reminder":
                 title = (args.get("title") or "").strip()
@@ -614,7 +614,7 @@ class GeminiService(GeminiServiceInterface):
                     skills.append({
                         "name": "CreateReminderSkill",
                         "action": "create_reminder",
-                        "params": {"data": json.dumps({"title": title, "datetime": dt})},
+                        "params": {"title": title, "datetime": dt},
                     })
             elif name == "google_search":
                 skills.append({
