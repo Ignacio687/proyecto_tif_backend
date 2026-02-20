@@ -103,10 +103,15 @@ FOLLOW_UP_WITHOUT_QUESTION_MARK_WITH_CONTEXT = [
 ]
 
 # ---- Create reminder skill: prompts that should trigger CreateReminderSkill (send timezone so "in 1 hour" / "tomorrow" resolve) ----
+# Use datetime for "at <time>"; use delay_minutes for "in X minutes".
 CREATE_REMINDER_PROMPTS = [
     "Remind me in 1 hour to call John",
     "Set a reminder for tomorrow at 9 to buy milk",
     "Remind me at 5pm to leave the office",
+]
+CREATE_REMINDER_DELAY_PROMPTS = [
+    "Recordá en 30 minutos que hay que salir",
+    "Remind me in 15 minutes to take the medicine",
 ]
 
 
@@ -588,14 +593,29 @@ class TestFollowUpWithoutQuestionMark:
 
 
 class TestCreateReminderSkillFlow:
-    """Validate Create reminder skill: response includes CreateReminderSkill with title and datetime.
+    """Validate Create reminder skill: response includes CreateReminderSkill with title and (datetime or delay_minutes).
     Uses auth_token_fresh_user: reminder tests are isolated (single request + timezone), no prior context needed."""
 
+    def _assert_create_reminder_params(self, params: dict, expect_datetime: bool, expect_delay: bool):
+        """Assert params have title and exactly one of datetime or delay_minutes per contract."""
+        assert "title" in params, f"CreateReminder params must contain title. Got: {params}"
+        title = (params.get("title") or "").strip()
+        assert len(title) > 0, f"title must be non-empty. Got: {params}"
+        has_dt = "datetime" in params and (params.get("datetime") or "").strip()
+        has_delay = "delay_minutes" in params and isinstance(params.get("delay_minutes"), int) and params["delay_minutes"] > 0
+        assert has_dt != has_delay, (
+            f"CreateReminder must have exactly one of datetime or delay_minutes. Got: {params}"
+        )
+        if expect_datetime:
+            assert has_dt, f"Expected datetime for this prompt. Got: {params}"
+        if expect_delay:
+            assert has_delay, f"Expected delay_minutes for this prompt. Got: {params}"
+
     @pytest.mark.parametrize("user_req", CREATE_REMINDER_PROMPTS)
-    def test_create_reminder_returns_skill_with_title_and_datetime(
+    def test_create_reminder_returns_skill_with_title_and_datetime_or_delay(
         self, client, auth_token_fresh_user, user_req
     ):
-        """For reminder instructions, response must include CreateReminderSkill with title and datetime. Send timezone so 'in 1 hour' / 'tomorrow' resolve."""
+        """For reminder instructions (at time or in 1 hour), response must include CreateReminderSkill with title and datetime or delay_minutes. Send timezone so 'tomorrow' / 'at 5pm' resolve."""
         skip_if_no_gemini_key()
         response = client.post(
             "/api/v1/assistant",
@@ -617,15 +637,41 @@ class TestCreateReminderSkillFlow:
         assert len(reminder_skills) >= 1, (
             f"Expected CreateReminderSkill for reminder instruction. Got skills: {skills}"
         )
-        skill = reminder_skills[0]
-        params = skill.get("params") or {}
-        assert "title" in params and "datetime" in params, (
-            f"CreateReminder params must contain title and datetime. Got: {params}"
+        self._assert_create_reminder_params(
+            reminder_skills[0].get("params") or {},
+            expect_datetime=False,
+            expect_delay=False,
         )
-        title = (params.get("title") or "").strip()
-        dt = (params.get("datetime") or "").strip()
-        assert len(title) > 0 and len(dt) > 0, (
-            f"title and datetime must be non-empty. Got: {params}"
+
+    @pytest.mark.parametrize("user_req", CREATE_REMINDER_DELAY_PROMPTS)
+    def test_create_reminder_delay_returns_skill_with_delay_minutes(
+        self, client, auth_token_fresh_user, user_req
+    ):
+        """For 'in X minutes' reminder instructions, response must include CreateReminderSkill with delay_minutes (not datetime)."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={
+                "user_req": user_req,
+                "timezone": "America/Argentina/Buenos_Aires",
+            },
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        skills = data.get("skills") or []
+        reminder_skills = [
+            s for s in skills
+            if (s.get("name") or "").lower().find("reminder") != -1
+            and (s.get("action") or "").lower() == "create_reminder"
+        ]
+        assert len(reminder_skills) >= 1, (
+            f"Expected CreateReminderSkill for delay-style reminder. Got skills: {skills}"
+        )
+        self._assert_create_reminder_params(
+            reminder_skills[0].get("params") or {},
+            expect_datetime=False,
+            expect_delay=True,
         )
 
 

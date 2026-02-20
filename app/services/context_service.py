@@ -23,10 +23,10 @@ def _format_timestamp(dt: Any, user_timezone: Optional[str] = None) -> str:
         try:
             tz = ZoneInfo(user_timezone)
             local = dt.astimezone(tz)
-            return local.strftime("%Y-%m-%d %H:%M %Z")
+            return local.strftime("%A, %Y-%m-%d %H:%M %Z")
         except Exception as e:
             logger.debug("Invalid timezone %s: %s", user_timezone, e)
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
+    return dt.strftime("%A, %Y-%m-%d %H:%M UTC")
 
 
 class ContextService(ContextServiceInterface):

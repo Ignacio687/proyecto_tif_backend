@@ -81,10 +81,10 @@ def build_current_time_and_location_context(
     now = datetime.now(tz)
     if resolved_tz_name:
         current_time_str = (
-            f"Current date and time (user's local): {now.strftime('%Y-%m-%d %H:%M')} {now.tzname()}"
+            f"Current date and time (user's local): {now.strftime('%A, %Y-%m-%d %H:%M')} {now.tzname()}"
         )
     else:
-        current_time_str = f"Current date and time (UTC): {now.strftime('%Y-%m-%d %H:%M')} UTC"
+        current_time_str = f"Current date and time (UTC): {now.strftime('%A, %Y-%m-%d %H:%M')} UTC"
 
     location_parts = []
     if resolved_tz_name:
@@ -547,17 +547,28 @@ class GeminiService(GeminiServiceInterface):
             ),
             types.FunctionDeclaration(
                 name="create_reminder",
-                description="Create a reminder at a specific time or after a delay. Use when the user asks to be reminded.",
+                description="Create a reminder at a specific time (use datetime) or after a delay from now (use delay_minutes). Use when the user asks to create a reminder or 'recordar' something. Exactly ONE of datetime or delay_minutes must be set: use datetime for 'at <date/time>' (e.g. tomorrow at 9, Friday at 10); use delay_minutes for 'in X minutes' / 'recordá en X minutos' (e.g. 30 for 'in 30 minutes', 60 for 'in 1 hour').",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "title": types.Schema(type=types.Type.STRING, description="Reminder title or description"),
+                        "title": types.Schema(
+                            type=types.Type.STRING,
+                            description="Short reminder text (e.g. 'Tomar medicación', 'Llamar a Juan'). Required.",
+                        ),
                         "datetime": types.Schema(
                             type=types.Type.STRING,
-                            description="Target date/time in ISO or 'YYYY-MM-DD HH:MM' format; use current time context for 'in 1 hour', 'tomorrow at 9', etc.",
+                            description="When the reminder should fire. ISO 8601 (e.g. 2025-02-21T15:00:00 or 2025-02-21T15:00:00-03:00) or 'YYYY-MM-DD HH:mm'. Use for 'at <date/time>'. Do not set if using delay_minutes.",
+                        ),
+                        "delay_minutes": types.Schema(
+                            type=types.Type.INTEGER,
+                            description="Reminder in N minutes from now. Use for 'in X minutes' / 'en 1 hora' (use 60). Positive integer only. Do not set if using datetime.",
+                        ),
+                        "description": types.Schema(
+                            type=types.Type.STRING,
+                            description="Optional longer text (event body in the calendar).",
                         ),
                     },
-                    required=["title", "datetime"],
+                    required=["title"],
                 ),
             ),
             types.FunctionDeclaration(
@@ -696,13 +707,34 @@ class GeminiService(GeminiServiceInterface):
                     })
             elif name == "create_reminder":
                 title = (args.get("title") or "").strip()
+                if not title:
+                    continue
                 dt = (args.get("datetime") or "").strip()
-                if title and dt:
-                    skills.append({
-                        "name": "CreateReminderSkill",
-                        "action": "create_reminder",
-                        "params": {"title": title, "datetime": dt},
-                    })
+                delay_minutes = args.get("delay_minutes")
+                if delay_minutes is not None:
+                    try:
+                        delay_minutes = int(delay_minutes)
+                    except (TypeError, ValueError):
+                        delay_minutes = None
+                has_dt = bool(dt)
+                has_delay = delay_minutes is not None and delay_minutes > 0
+                if has_dt and has_delay:
+                    continue  # Invalid: exactly one of datetime or delay_minutes
+                if not has_dt and not has_delay:
+                    continue  # Invalid: need either datetime or delay_minutes
+                desc = (args.get("description") or "").strip() or None
+                reminder_params: Dict[str, Any] = {"title": title}
+                if has_dt:
+                    reminder_params["datetime"] = dt
+                else:
+                    reminder_params["delay_minutes"] = delay_minutes
+                if desc is not None:
+                    reminder_params["description"] = desc
+                skills.append({
+                    "name": "CreateReminderSkill",
+                    "action": "create_reminder",
+                    "params": reminder_params,
+                })
             elif name == "google_search":
                 skills.append({
                     "name": "GoogleSearchSkill",

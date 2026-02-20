@@ -59,8 +59,31 @@ class SendMessageParams(BaseModel):
 
 
 class CreateReminderParams(BaseModel):
-    title: str = Field(description="Reminder title or description")
-    datetime: str = Field(description="Target date/time in ISO or YYYY-MM-DD HH:MM format")
+    """Exactly one of datetime or delay_minutes must be set. title is required."""
+    title: str = Field(min_length=1, description="Short reminder text (e.g. 'Tomar medicación', 'Llamar a Juan')")
+    datetime: Optional[str] = Field(
+        default=None,
+        description="When the reminder should fire. ISO 8601 (e.g. 2025-02-21T15:00:00 or 2025-02-21T15:00:00-03:00) or YYYY-MM-DD HH:mm. Use for 'at <date/time>'.",
+    )
+    delay_minutes: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Reminder in N minutes from now. Use for 'in X minutes' / 'recordá en X minutos'. Do not set together with datetime.",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Optional longer text (event body in the calendar).",
+    )
+
+    @model_validator(mode="after")
+    def exactly_one_datetime_or_delay(self):
+        has_dt = bool((self.datetime or "").strip())
+        has_delay = self.delay_minutes is not None and self.delay_minutes > 0
+        if not has_dt and not has_delay:
+            raise ValueError("CreateReminderParams must have either datetime or delay_minutes")
+        if has_dt and has_delay:
+            raise ValueError("CreateReminderParams must have exactly one of datetime or delay_minutes")
+        return self
 
 
 class GoogleSearchParams(BaseModel):
