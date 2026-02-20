@@ -13,50 +13,6 @@ from app.config import settings
 from app.logger import logger
 from app.services.interfaces import GeminiServiceInterface, ContextServiceInterface
 
-# Debug context: max items and chars per field (keep logs readable)
-_DEBUG_CONTEXT_TEXT_MAX = 280
-_DEBUG_KEY_CTX_ITEMS = 4
-_DEBUG_KEY_CTX_CHARS = 50
-_DEBUG_CONV_ITEMS = 3
-_DEBUG_CONV_CHARS = 45
-
-
-def _truncate_for_debug(s: str, max_len: int = _DEBUG_CONTEXT_TEXT_MAX) -> str:
-    if not s or len(s) <= max_len:
-        return s
-    return s[:max_len] + f"... ({len(s)} chars)"
-
-
-def _debug_context_summary(
-    time_and_location: str,
-    key_context_data: List[Dict[str, Any]],
-    context_conversations: List[Dict[str, Any]],
-    context_data_text: str,
-) -> None:
-    """Log variable context for Gemini in short, readable lines (no datetimes, no huge dumps)."""
-    logger.debug("Gemini variable context (truncated):")
-    time_line = (time_and_location or "").strip().replace("\n", " ")
-    if time_line:
-        logger.debug("  time/location: " + _truncate_for_debug(time_line, 80))
-    for i, ctx in enumerate(key_context_data[:_DEBUG_KEY_CTX_ITEMS], 1):
-        info = ctx.get("relevant_info") or ""
-        logger.debug("  key_ctx[%d]: %s" % (i, _truncate_for_debug(info, _DEBUG_KEY_CTX_CHARS)))
-    if len(key_context_data) > _DEBUG_KEY_CTX_ITEMS:
-        logger.debug("  key_ctx: ... +%d more" % (len(key_context_data) - _DEBUG_KEY_CTX_ITEMS,))
-    for i, c in enumerate(context_conversations[:_DEBUG_CONV_ITEMS], 1):
-        u = (c.get("user_input") or "")[: _DEBUG_CONV_CHARS]
-        r = (c.get("server_reply") or "")[: _DEBUG_CONV_CHARS]
-        if len(c.get("user_input") or "") > _DEBUG_CONV_CHARS:
-            u += "..."
-        if len(c.get("server_reply") or "") > _DEBUG_CONV_CHARS:
-            r += "..."
-        logger.debug("  conv[%d] user: %s" % (i, u))
-        logger.debug("       assistant: %s" % (r,))
-    if len(context_conversations) > _DEBUG_CONV_ITEMS:
-        logger.debug("  conv: ... +%d more" % (len(context_conversations) - _DEBUG_CONV_ITEMS,))
-    text_one_line = (context_data_text or "").replace("\n", " ").strip()
-    logger.debug("  context_data_text: %s" % (_truncate_for_debug(text_one_line),))
-
 
 def build_current_time_and_location_context(
     timezone_str: Optional[str] = None,
@@ -310,16 +266,13 @@ class GeminiService(GeminiServiceInterface):
             time_and_location += user_location_str + "\n"
         if time_and_location:
             time_and_location = time_and_location.strip() + "\n\n"
-        full_prompt = time_and_location + context_data_text + "\n\nUser Request: " + prompt
-
-        context_stats = self.context_service.calculate_context_stats(
-            key_context_data, context_conversations
-        )
-        logger.debug("Context stats: %s" % (context_stats,))
-
-        _debug_context_summary(
-            time_and_location, key_context_data, context_conversations, context_data_text
-        )
+        request_prefix = ""
+        if context_conversations:
+            request_prefix = (
+                "Interpret the following user message as referring to the last exchange above (last turn in RECENT CONVERSATION HISTORY) unless they clearly refer to something else.\n\n"
+            )
+        # Context order: KEY CONTEXT, then RECENT CONVERSATION HISTORY, then time/location, then User Request
+        full_prompt = context_data_text + "\n\n" + time_and_location + request_prefix + "User Request: " + prompt
 
         contents = [
             types.Content(
@@ -618,6 +571,8 @@ class GeminiService(GeminiServiceInterface):
             "to tell her, let me know what it is and I'll send it now', 'Just tell me the message and I'll send it'. "
             "In those cases do not call send_message (or any skill) with a generic message like 'something' or 'it' — "
             "wait for the user to specify the actual message.\n\n"
+            "RESOLVED NAMES FOR call_contact / send_message: When the reply identifies who was meant (e.g. 'tu hermana Luna', 'Luna', '0800-321-0611'), use "
+            "that information in contact_name, recipient, or contact_phone/recipient_phone. Otherwise, use the user's vague phrase (e.g. 'hermana').\n\n"
             "Use the current date/time when the user says things like 'in 1 hour', 'tomorrow at 9'."
         )
         prompt_parts = []

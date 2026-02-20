@@ -43,33 +43,35 @@ class ContextService(ContextServiceInterface):
                               fixed_context: str,
                               user_timezone: Optional[str] = None) -> str:
         """Build optimized context with character limits and smart prioritization.
+
+        - Fixed context is always preserved.
+        - Key context: most important first (by priority); truncated only by max_key_context_chars.
+        - Conversation history: newest first; truncated only by max_conversation_chars.
+        Sections are independent—they do not truncate one another. When key context is empty we
+        simply omit that section; when conversation is empty we omit that section. No final-string
+        truncation; total length = key section + conversation section.
         user_timezone: if provided, timestamps are formatted in this timezone (stored as UTC in DB).
         """
         # Start with fixed context
         instruction = fixed_context
 
-        # Add RECENT CONVERSATION first so the model prioritizes the current exchange
+        # Order: KEY CONTEXT first, then RECENT CONVERSATION HISTORY
+        key_context_section = self._build_key_context_section(key_context_data, user_timezone)
+        if key_context_section:
+            instruction += "\n\n" + key_context_section
+
         conversation_section = self._build_conversation_section(context_conversations, user_timezone)
         if conversation_section:
             instruction += "\n\n" + conversation_section
 
-        # Then key context (long-term facts)
-        key_context_section = self._build_key_context_section(key_context_data, user_timezone)
-        if key_context_section:
-            instruction += "\n\n" + key_context_section
-        
-        # Final length check and truncation if needed
-        instruction = self._ensure_total_length_limit(instruction, fixed_context)
-        
-        total_length = len(instruction)
-        logger.debug(f"Total optimized context length: {total_length} characters (~{total_length//4} tokens)")
-        
+        # No final string truncation: fixed context is always preserved; key context and conversation
+        # are each truncated only by their own limits (max_key_context_chars, max_conversation_chars).
         return instruction
     
     def _build_key_context_section(
         self, key_context_data: List[Dict[str, Any]], user_timezone: Optional[str] = None
     ) -> Optional[str]:
-        """Build key context section with character limits and priority sorting."""
+        """Build key context section: most important first (by priority), up to max_key_context_chars. When empty, returns None (no section)."""
         if not key_context_data:
             return None
             
@@ -84,7 +86,6 @@ class ContextService(ContextServiceInterface):
             context_line = f"{i}. [{ts_str} | priority: {context.get('context_priority', '')}] {context['relevant_info']}\n"
             
             if len(key_context_content) + len(context_line) > self.max_key_context_chars:
-                logger.debug(f"Key context truncated at {len(key_context_content)} characters, skipping {len(sorted_key_context) - i + 1} entries")
                 break
                 
             key_context_content += context_line
@@ -94,17 +95,15 @@ class ContextService(ContextServiceInterface):
     def _build_conversation_section(
         self, context_conversations: List[Dict[str, Any]], user_timezone: Optional[str] = None
     ) -> Optional[str]:
-        """Build conversation section with character limits and recency priority.
-        Timestamps (stored UTC) are formatted in user_timezone if provided.
-        """
+        """Build conversation section: newest first, up to max_conversation_chars. When empty, returns None (no section). Output order is older → newer. context_conversations is assumed newest-first (e.g. get_last_conversations)."""
         if not context_conversations:
             return None
             
-        section = "RECENT CONVERSATION HISTORY:\n"
-        conversation_content = ""
-        
-        # Process recent conversations first (reverse chronological)
-        for conv in reversed(context_conversations):
+        section = "RECENT CONVERSATION HISTORY (order: older → newer; last exchange is the most recent):\n"
+        # Collect entries from newest to oldest until we hit the char limit
+        entries: List[str] = []
+        total_chars = 0
+        for conv in context_conversations:  # newest first
             user_input = conv.get('user_input', '')
             server_reply = conv.get('server_reply', '')
             ts_str = _format_timestamp(conv.get('timestamp'), user_timezone)
@@ -114,31 +113,13 @@ class ContextService(ContextServiceInterface):
                 clean_reply = clean_reply[len('assistant:'):].strip()
             
             conv_entry = f"User: {user_input} (at {ts_str})\nAssistant: {clean_reply}\n\n"
-            
-            if len(conversation_content) + len(conv_entry) > self.max_conversation_chars:
-                logger.debug(f"Conversation history truncated at {len(conversation_content)} characters")
+            if total_chars + len(conv_entry) > self.max_conversation_chars:
                 break
-                
-            conversation_content = conv_entry + conversation_content  # Prepend to maintain chronological order
-        
+            entries.append(conv_entry)
+            total_chars += len(conv_entry)
+        # Chronological order (oldest first, newest last) for the model
+        conversation_content = "".join(reversed(entries))
         return section + conversation_content if conversation_content else None
-    
-    def _ensure_total_length_limit(self, instruction: str, fixed_context: str) -> str:
-        """Ensure total instruction doesn't exceed maximum length"""
-        if len(instruction) <= self.max_total_context_chars:
-            return instruction
-        
-        # If too long, keep fixed context and truncate the rest
-        logger.warning(f"Total context too long ({len(instruction)} chars), truncating to preserve fixed context")
-        
-        available_space = self.max_total_context_chars - len(fixed_context) - 50  # 50 chars buffer
-        if available_space <= 0:
-            logger.error("Fixed context too long, returning only fixed context")
-            return fixed_context
-        
-        # Truncate and add indication
-        truncated = instruction[:self.max_total_context_chars - 50] + "\n\n[Context truncated to fit limits]"
-        return truncated
     
     def calculate_context_stats(self, key_context_data: List[Dict[str, Any]], 
                                context_conversations: List[Dict[str, Any]]) -> Dict[str, Any]:

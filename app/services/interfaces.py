@@ -114,6 +114,8 @@ class ContextServiceInterface(ABC):
                               fixed_context: str,
                               user_timezone: Optional[str] = None) -> str:
         """Build optimized context with character limits and smart prioritization.
+        Fixed context preserved; key context (most important first) and conversation (newest first)
+        are each truncated only by their own limits; no final-string truncation.
         user_timezone: if provided, timestamps (stored UTC) are formatted in this timezone."""
         pass
     

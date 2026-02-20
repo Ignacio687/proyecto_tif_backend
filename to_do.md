@@ -1,4 +1,4 @@
-- **Point 1 - Fix this behavior, it seems it though that i was taking about a saved key context, and not the lst message or response as it should be. The second call did it right because it only sees the last two convversations i think**
+- **Point 1 - SOLVED.** ~~Fix this behavior, it seems it thought that I was talking about a saved key context, and not the last message or response as it should be. The second call did it right because it only sees the last two conversations I think~~
 
     INFO:     127.0.0.1:38970 - "POST /api/v1/auth/refresh HTTP/1.1" 200 OK
     [2026-02-20T13:48:11.593598-0300] DEBUG - Retrieved 20 conversations for context (4769 chars)
@@ -63,7 +63,39 @@
     [2026-02-20T14:17:52.642405-0300] INFO - Response sent for user 697c45235a20de239339e69c: ¡Claro, Ignacio! He vuelto a guardar que tu hermana se llama Luna en mi memoria para no olvidarlo....
 
 
-- **Point 2 – Long-term memory: conversation summarization + semantic retrieval (background job)**
+- **Point 2 - SOLVED.** ~~Second call ignores that the first call knows its luna and calls hermana instead~~
+
+    INFO:     127.0.0.1:44608 - "GET /api/v1/conversations?page=1&page_size=10&timezone=America%2FBuenos_Aires HTTP/1.1" 200 OK
+    [2026-02-20T16:11:16.417764-0300] DEBUG - Retrieved 22 conversations for context (4761 chars)
+    [2026-02-20T16:11:16.420579-0300] DEBUG - Retrieved 11 key contexts for user 697c45235a20de239339e69c (1218 chars)
+    [2026-02-20T16:11:16.423218-0300] DEBUG - Conversation history truncated at 4769 characters
+    [2026-02-20T16:11:16.423568-0300] DEBUG - Total optimized context length: 6606 characters (~1651 tokens)
+    [2026-02-20T16:11:16.423680-0300] DEBUG - Context stats: {'key_context_entries': 11, 'key_context_chars': 1196, 'conversation_entries': 22, 'conversation_chars': 4365, 'total_dynamic_chars': 5561, 'within_limits': {'key_context': True, 'conversations': True, 'total': True}}
+    [2026-02-20T16:11:16.423758-0300] DEBUG - Gemini variable context (truncated):
+    [2026-02-20T16:11:16.423818-0300] DEBUG -   time/location: Current date and time (user's local): Friday, 2026-02-20 16:11 -03 User timezone... (102 chars)
+    [2026-02-20T16:11:16.423874-0300] DEBUG -   key_ctx[1]: La hermana del usuario se llama Luna
+    [2026-02-20T16:11:16.423928-0300] DEBUG -   key_ctx[2]: Ignacio solicitó el número de atención al cliente ... (207 chars)
+    [2026-02-20T16:11:16.423982-0300] DEBUG -   key_ctx[3]: Ignacio es el desarrollador de mis herramientas in... (57 chars)
+    [2026-02-20T16:11:16.424034-0300] DEBUG -   key_ctx[4]: El usuario consultó por noticias actuales el 20 de... (207 chars)
+    [2026-02-20T16:11:16.424086-0300] DEBUG -   key_ctx: ... +7 more
+    [2026-02-20T16:11:16.424151-0300] DEBUG -   conv[1] user: tengo un examen el miercoles a las 9, haceme ...
+    [2026-02-20T16:11:16.424216-0300] DEBUG -        assistant: Entendido, Ignacio. He creado un recordatorio...
+    [2026-02-20T16:11:16.424292-0300] DEBUG -   conv[2] user: y tengo una juntada con unos amigos para juga...
+    [2026-02-20T16:11:16.424397-0300] DEBUG -        assistant: Entendido, Ignacio. He creado un recordatorio...
+    [2026-02-20T16:11:16.424473-0300] DEBUG -   conv[3] user: y tengo una reuinon el sabado a las 12
+    [2026-02-20T16:11:16.424539-0300] DEBUG -        assistant: Entendido, Ignacio. He creado un recordatorio...
+    [2026-02-20T16:11:16.424603-0300] DEBUG -   conv: ... +19 more
+    [2026-02-20T16:11:16.424692-0300] DEBUG -   context_data_text: RECENT CONVERSATION HISTORY: User: y tengo una juntada con unos amigos para jugar al bowling el domigno a las 8 de la noche (at Friday, 2026-02-20 15:05 -03) Assistant: Entendido, Ignacio. He creado un recordatorio para tu juntada con amigos para jugar al bowling este domingo a l... (6603 chars)
+    [2026-02-20T16:11:16.424935-0300] INFO - Full context sent to LLM written to: %s
+    [2026-02-20T16:11:16.426264-0300] INFO - Sending user prompt to Gemini: llama a mi hermana
+    [2026-02-20T16:11:19.077350-0300] DEBUG - Parsed JSON response: {'server_reply': '¡Claro, Ignacio! Estoy llamando a tu hermana Luna ahora mismo.', 'app_params': [{'question': False}], 'interaction_params': {'relevant_for_context': False, 'context_priority': 0, 'relevant_info': ''}}
+    [2026-02-20T16:11:20.667415-0300] DEBUG - Second call returned skills: [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'hermana'}}]
+    [2026-02-20T16:11:20.667552-0300] INFO - GEMINI SERVICE RETURNING: {'server_reply': '¡Claro, Ignacio! Estoy llamando a tu hermana Luna ahora mismo.', 'app_params': [{'question': False}], 'interaction_params': {'relevant_for_context': False, 'context_priority': 0, 'relevant_info': ''}, 'skills': [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'hermana'}}]}
+    [2026-02-20T16:11:20.669453-0300] DEBUG - Saved conversation for user 697c45235a20de239339e69c
+    [2026-02-20T16:11:20.670613-0300] DEBUG - No zero-priority contexts to clean up for user 697c45235a20de239339e69c
+    [2026-02-20T16:11:20.670887-0300] INFO - Response sent for user 697c45235a20de239339e69c: ¡Claro, Ignacio! Estoy llamando a tu hermana Luna ahora mismo....
+
+- **Point 3 – Long-term memory: conversation summarization + semantic retrieval (background job)**
 
   **Goal:** Build a "long-term memory" from relevant conversations. When the user talks about a topic over many turns (e.g. 20 chats about a project), the system maintains a running summary; when the conversation shifts or the topic ends, the summary is finalized, a short headline is generated, and the headline is embedded (vector) and stored. Future user requests are compared (e.g. vector similarity) to these stored headlines so the model can be given the **most relevant past summarized conversations** as context, without sending full chat history.
 
@@ -87,7 +119,7 @@
 
 ---
 
-- **Point 3 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
+- **Point 4 – Use new gemini 2.5 flash preview tts for online voice generation, send voice to the app**
     """
         # To run this code you need to install the following dependencies:
         # pip install google-genai
@@ -243,13 +275,13 @@
 
 ---
 
-- **Point 4 – Retry logic for 503 in Gemini client** *(to consider)*
+- **Point 5 – Retry logic for 503 in Gemini client** *(to consider)*
 
   Consider adding retry logic for **503 (Service Unavailable)** responses from the Gemini API (e.g. deadline expired, model overloaded) so transient failures are retried and the client is more resilient.
 
 ---
 
-- **Point 5 – Play YouTube video skill: user asks to play a video, Gemini finds the URL, app opens it**
+- **Point 6 – Play YouTube video skill: user asks to play a video, Gemini finds the URL, app opens it**
 
   **Goal:** The user can ask the assistant to play a YouTube video (e.g. "poné el último video de MrBeast", "quiero ver recetas de milanesas"). The server uses Gemini with Google Search grounding to find the real video URL, returns it as a skill action, and the Android app opens it via an `ACTION_VIEW` intent in the YouTube app.
 
