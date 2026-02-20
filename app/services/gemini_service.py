@@ -528,14 +528,21 @@ class GeminiService(GeminiServiceInterface):
             ),
             types.FunctionDeclaration(
                 name="send_message",
-                description="Send a text/message to a contact. Use when the user asks to text, message, or send something to someone.",
+                description="Send a text/message to a contact. Use when the user asks to text, message, or send something to someone. Return exactly ONE of recipient or recipient_phone (prefer recipient_phone if both name and number are given).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "recipient": types.Schema(type=types.Type.STRING, description="Name of the recipient"),
+                        "recipient": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the recipient (used for contact lookup when recipient_phone is not set). Use when the user identifies the recipient by name.",
+                        ),
                         "message": types.Schema(type=types.Type.STRING, description="Message body to send"),
+                        "recipient_phone": types.Schema(
+                            type=types.Type.STRING,
+                            description="Phone number when the user provides it directly or when known from context. Use digits as given; include country/area code if the user said it. When set, the app sends to this number (no contact lookup).",
+                        ),
                     },
-                    required=["recipient", "message"],
+                    required=["message"],
                 ),
             ),
             types.FunctionDeclaration(
@@ -669,13 +676,23 @@ class GeminiService(GeminiServiceInterface):
                         "params": params,
                     })
             elif name == "send_message":
+                # If model returns both, prefer recipient_phone (per schema).
                 recipient = (args.get("recipient") or "").strip()
+                recipient_phone = (args.get("recipient_phone") or "").strip()
                 message = (args.get("message") or "").strip()
-                if recipient and message:
+                if not message:
+                    continue
+                if recipient or recipient_phone:
+                    # Exactly one: prefer recipient_phone when both given (same as call_contact)
+                    msg_params: Dict[str, Any] = {"message": message}
+                    if recipient_phone:
+                        msg_params["recipient_phone"] = recipient_phone
+                    else:
+                        msg_params["recipient"] = recipient
                     skills.append({
                         "name": "SendMessageSkill",
                         "action": "send_message",
-                        "params": {"recipient": recipient, "message": message},
+                        "params": msg_params,
                     })
             elif name == "create_reminder":
                 title = (args.get("title") or "").strip()

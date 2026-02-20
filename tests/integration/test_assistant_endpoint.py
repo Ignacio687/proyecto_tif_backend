@@ -78,6 +78,13 @@ SEND_MESSAGE_PROMPTS = [
     "Can you message Mom that I'm running late?",
 ]
 
+# ---- Send message by number: (user_req, expected_number) — response must include ONLY recipient_phone with this number ----
+SEND_MESSAGE_BY_NUMBER_PROMPTS = [
+    ("Text +54 11 1234-5678 that I'm on my way", "541112345678"),
+    ("Send a message to 5642612345 saying I'll be late", "5642612345"),
+    ("Message 555-1234: meeting at 3pm", "5551234"),
+]
+
 # ---- Follow-up without "?": assistant asks for content; skills selector must not return placeholder ----
 # (user_req, placeholder_message_values) — if SendMessageSkill is returned, message must not be in placeholder set
 FOLLOW_UP_WITHOUT_QUESTION_MARK_SCENARIOS = [
@@ -419,14 +426,14 @@ class TestCallSkillWithContext:
 
 
 class TestSendMessageSkillFlow:
-    """Validate Send message skill: response includes SendMessageSkill with recipient and message.
+    """Validate Send message skill: response includes SendMessageSkill with message and exactly one of recipient or recipient_phone.
     Uses auth_token_fresh_user so each run has no prior conversation (model won't ask 'Which John?')."""
 
     @pytest.mark.parametrize("user_req", SEND_MESSAGE_PROMPTS)
     def test_send_message_returns_skill_with_recipient_and_message(
         self, client, auth_token_fresh_user, user_req
     ):
-        """For message/text instructions, response must include SendMessageSkill with recipient and message."""
+        """For message/text instructions, response must include SendMessageSkill with message and exactly one of recipient or recipient_phone."""
         skip_if_no_gemini_key()
         response = client.post(
             "/api/v1/assistant",
@@ -447,13 +454,58 @@ class TestSendMessageSkillFlow:
         )
         skill = msg_skills[0]
         params = skill.get("params") or {}
-        assert "recipient" in params and "message" in params, (
-            f"SendMessage params must contain recipient and message. Got: {params}"
+        assert "message" in params, (
+            f"SendMessage params must contain message. Got: {params}"
+        )
+        message = (params.get("message") or "").strip()
+        assert len(message) > 0, (
+            f"message must be non-empty. Got: {params}"
         )
         recipient = (params.get("recipient") or "").strip()
-        message = (params.get("message") or "").strip()
-        assert len(recipient) > 0 and len(message) > 0, (
-            f"recipient and message must be non-empty. Got: {params}"
+        recipient_phone = (params.get("recipient_phone") or "").strip()
+        assert recipient or recipient_phone, (
+            f"SendMessage params must contain either recipient or recipient_phone. Got: {params}"
+        )
+        assert not (recipient and recipient_phone), (
+            f"SendMessage params must have exactly one of recipient or recipient_phone. Got: {params}"
+        )
+
+    @pytest.mark.parametrize("user_req,expected_number", SEND_MESSAGE_BY_NUMBER_PROMPTS)
+    def test_send_message_by_number_returns_only_recipient_phone_with_given_number(
+        self, client, auth_token_fresh_user, user_req, expected_number
+    ):
+        """When the user provides a phone number for messaging, response must include ONLY recipient_phone containing that number."""
+        skip_if_no_gemini_key()
+        response = client.post(
+            "/api/v1/assistant",
+            json={"user_req": user_req},
+            headers={"Authorization": f"Bearer {auth_token_fresh_user}"},
+        )
+        assert response.status_code == 200, f"Request failed: {response.text[:200]}"
+        data = response.json()
+        skills = data.get("skills") or []
+        msg_skills = [
+            s
+            for s in skills
+            if (s.get("name") or "").lower().find("message") != -1
+            and (s.get("action") or "").lower() == "send_message"
+        ]
+        assert len(msg_skills) >= 1, (
+            f"Expected SendMessageSkill for number request '{user_req}'. Got skills: {skills}"
+        )
+        params = msg_skills[0].get("params") or {}
+        recipient = (params.get("recipient") or "").strip()
+        recipient_phone = (params.get("recipient_phone") or "").strip()
+        assert recipient_phone, (
+            f"For number request '{user_req}' model must return recipient_phone. Got: {params}"
+        )
+        assert not recipient, (
+            f"For number request response must have only recipient_phone, not recipient. Got: {params}"
+        )
+        expected_digits = "".join(c for c in expected_number if c.isdigit())
+        actual_digits = "".join(c for c in recipient_phone if c.isdigit())
+        assert expected_digits in actual_digits or actual_digits in expected_digits, (
+            f"recipient_phone should contain the requested number {expected_number!r}. Got: {recipient_phone!r}"
         )
 
 

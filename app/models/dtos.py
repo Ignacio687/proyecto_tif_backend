@@ -24,8 +24,38 @@ class CallContactParams(BaseModel):
 
 
 class SendMessageParams(BaseModel):
-    recipient: str = Field(description="Name of the recipient")
+    """Exactly one of recipient or recipient_phone must be non-empty. message is always required."""
+    recipient: Optional[str] = Field(
+        default=None,
+        description="Name of the recipient (for reply text; used for contact lookup when recipient_phone is not set).",
+    )
     message: str = Field(description="Message body to send")
+    recipient_phone: Optional[str] = Field(
+        default=None,
+        description="Phone number of the recipient. When set, the app sends the SMS to this number directly (no contact lookup). Same pattern as CallContactParams.contact_phone.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_whitespace_optional_strings(cls, data: Any) -> Any:
+        """Treat whitespace-only recipient/recipient_phone as not provided."""
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for key in ("recipient", "recipient_phone"):
+            if key in out and isinstance(out[key], str) and not out[key].strip():
+                out[key] = None
+        return out
+
+    @model_validator(mode="after")
+    def validate_recipient_identifier(self):
+        has_name = bool((self.recipient or "").strip())
+        has_phone = bool((self.recipient_phone or "").strip())
+        if not has_name and not has_phone:
+            raise ValueError("SendMessageParams must have either recipient or recipient_phone")
+        if has_name and has_phone:
+            raise ValueError("SendMessageParams must have exactly one of recipient or recipient_phone")
+        return self
 
 
 class CreateReminderParams(BaseModel):
