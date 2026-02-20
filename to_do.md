@@ -12,6 +12,52 @@
         [2026-02-17T08:10:07.755437-0300] DEBUG - Cleaned up 1 zero-priority contexts for user 6993e5800a7b9993a45b65ac
         [2026-02-17T08:10:07.755568-0300] INFO - Response sent for user 6993e5800a7b9993a45b65ac: Entendido, Ignacio. He actualizado el número de tu papá. ¿Quieres que lo llame ahora o prefieres que...
         INFO:     127.0.0.1:47506 - "POST /api/v1/assistant HTTP/1.1" 200 OK
+
+        ---
+
+        INFO:     127.0.0.1:57718 - "POST /api/v1/assistant HTTP/1.1" 200 OK
+        [2026-02-18T11:09:52.631792-0300] DEBUG - Retrieved 8 conversations for context (4359 chars)
+        [2026-02-18T11:09:52.634277-0300] DEBUG - Retrieved 3 key contexts for user 6995b7353065cc806b0c57bb (349 chars)
+        [2026-02-18T11:09:52.637277-0300] DEBUG - Total optimized context length: 5135 characters (~1283 tokens)
+        [2026-02-18T11:09:52.637589-0300] DEBUG - Context stats: {'key_context_entries': 3, 'key_context_chars': 343, 'conversation_entries': 8, 'conversation_chars': 4215, 'total_dynamic_chars': 4558, 'within_limits': {'key_context': True, 'conversations': True, 'total': True}}
+        [2026-02-18T11:09:52.637710-0300] DEBUG - Variable context for Gemini call: time_and_location=%s | key_context_data(%d)=%s | context_conversations(%d)=%s | context_data_text=%s
+        [2026-02-18T11:09:52.639005-0300] INFO - Sending user prompt to Gemini: podrias llamar a mi hermana Luna
+        [2026-02-18T11:09:58.184827-0300] DEBUG - Parsed JSON response: {'server_reply': 'Claro, Ignacio. Enseguida llamo a tu hermana Luna.', 'app_params': [{'question': False}], 'interaction_params': {'relevant_for_context': True, 'context_priority': 70, 'relevant_info': 'La hermana del usuario se llama Luna'}, 'context_updates': []}
+        [2026-02-18T11:09:59.407894-0300] DEBUG - Second call returned skills: [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'Luna'}}]
+        [2026-02-18T11:09:59.408017-0300] INFO - GEMINI SERVICE RETURNING: {'server_reply': 'Claro, Ignacio. Enseguida llamo a tu hermana Luna.', 'app_params': [{'question': False}], 'interaction_params': {'relevant_for_context': True, 'context_priority': 70, 'relevant_info': 'La hermana del usuario se llama Luna'}, 'context_updates': [], 'skills': [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'Luna'}}]}
+        [2026-02-18T11:09:59.411019-0300] DEBUG - Saved conversation for user 6995b7353065cc806b0c57bb
+        [2026-02-18T11:09:59.414227-0300] DEBUG - Saved new key context for user 6995b7353065cc806b0c57bb: La hermana del usuario se llama Luna...
+        [2026-02-18T11:09:59.414561-0300] DEBUG - Saved current interaction key context for user 6995b7353065cc806b0c57bb: La hermana del usuario se llama Luna...
+        [2026-02-18T11:09:59.415778-0300] DEBUG - No zero-priority contexts to clean up for user 6995b7353065cc806b0c57bb
+        [2026-02-18T11:09:59.416027-0300] INFO - Response sent for user 6995b7353065cc806b0c57bb: Claro, Ignacio. Enseguida llamo a tu hermana Luna....
+        INFO:     127.0.0.1:35902 - "POST /api/v1/assistant HTTP/1.1" 200 OK
+        INFO:     127.0.0.1:47242 - "POST /api/v1/auth/verify-token HTTP/1.1" 200 OK
+        INFO:     127.0.0.1:47242 - "GET /api/v1/conversations?page=1&page_size=10 HTTP/1.1" 200 OK
+        [2026-02-18T11:10:20.871415-0300] DEBUG - Retrieved 9 conversations for context (4459 chars)
+        [2026-02-18T11:10:20.873278-0300] DEBUG - Retrieved 4 key contexts for user 6995b7353065cc806b0c57bb (387 chars)
+        [2026-02-18T11:10:20.875581-0300] DEBUG - Total optimized context length: 5341 characters (~1335 tokens)
+        [2026-02-18T11:10:20.875845-0300] DEBUG - Context stats: {'key_context_entries': 4, 'key_context_chars': 379, 'conversation_entries': 9, 'conversation_chars': 4297, 'total_dynamic_chars': 4676, 'within_limits': {'key_context': True, 'conversations': True, 'total': True}}
+        [2026-02-18T11:10:20.875995-0300] DEBUG - Variable context for Gemini call: time_and_location=%s | key_context_data(%d)=%s | context_conversations(%d)=%s | context_data_text=%s
+        [2026-02-18T11:10:20.877120-0300] INFO - Sending user prompt to Gemini: ahora a pedro
+        [2026-02-18T11:10:22.790028-0300] DEBUG - Parsed JSON response: {'server_reply': 'Entendido, Ignacio. ¿Querés que llame a Pedro o preferís que le envíe un mensaje?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': False, 'context_priority': 0, 'relevant_info': ''}}
+        [2026-02-18T11:10:24.365764-0300] DEBUG - Second call returned skills: [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'Luna'}}]
+        [2026-02-18T11:10:24.365915-0300] INFO - GEMINI SERVICE RETURNING: {'server_reply': 'Entendido, Ignacio. ¿Querés que llame a Pedro o preferís que le envíe un mensaje?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': False, 'context_priority': 0, 'relevant_info': ''}, 'skills': [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'Luna'}}]}
+        [2026-02-18T11:10:24.368757-0300] DEBUG - Saved conversation for user 6995b7353065cc806b0c57bb
+        [2026-02-18T11:10:24.370121-0300] DEBUG - No zero-priority contexts to clean up for user 6995b7353065cc806b0c57bb
+        [2026-02-18T11:10:24.370300-0300] INFO - Response sent for user 6995b7353065cc806b0c57bb: Entendido, Ignacio. ¿Querés que llame a Pedro o preferís que le envíe un mensaje?...
+        INFO:     127.0.0.1:42434 - "POST /api/v1/assistant HTTP/1.1" 200 OK
+        [2026-02-18T11:10:40.124608-0300] DEBUG - Retrieved 10 conversations for context (4571 chars)
+        [2026-02-18T11:10:40.126633-0300] DEBUG - Retrieved 4 key contexts for user 6995b7353065cc806b0c57bb (387 chars)
+        [2026-02-18T11:10:40.128842-0300] DEBUG - Total optimized context length: 5481 characters (~1370 tokens)
+        [2026-02-18T11:10:40.128985-0300] DEBUG - Context stats: {'key_context_entries': 4, 'key_context_chars': 379, 'conversation_entries': 10, 'conversation_chars': 4391, 'total_dynamic_chars': 4770, 'within_limits': {'key_context': True, 'conversations': True, 'total': True}}
+        [2026-02-18T11:10:40.129092-0300] DEBUG - Variable context for Gemini call: time_and_location=%s | key_context_data(%d)=%s | context_conversations(%d)=%s | context_data_text=%s
+        [2026-02-18T11:10:40.129885-0300] INFO - Sending user prompt to Gemini: llama
+        [2026-02-18T11:10:42.662023-0300] DEBUG - Parsed JSON response: {'server_reply': 'Entendido, Ignacio. ¿Querés que llame a Pedro?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': False, 'context_priority': 0, 'relevant_info': ''}}
+        [2026-02-18T11:10:43.498765-0300] DEBUG - Second call returned skills: [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'Pedro'}}]
+        [2026-02-18T11:10:43.498924-0300] INFO - GEMINI SERVICE RETURNING: {'server_reply': 'Entendido, Ignacio. ¿Querés que llame a Pedro?', 'app_params': [{'question': True}], 'interaction_params': {'relevant_for_context': False, 'context_priority': 0, 'relevant_info': ''}, 'skills': [{'name': 'CallContactSkill', 'action': 'call_contact', 'params': {'contact_name': 'Pedro'}}]}
+        [2026-02-18T11:10:43.500713-0300] DEBUG - Saved conversation for user 6995b7353065cc806b0c57bb
+        [2026-02-18T11:10:43.501945-0300] DEBUG - No zero-priority contexts to clean up for user 6995b7353065cc806b0c57bb
+        [2026-02-18T11:10:43.502122-0300] INFO - Response sent for user 6995b7353065cc806b0c57bb: Entendido, Ignacio. ¿Querés que llame a Pedro?...
     """
 
 - **Point 2 – Long-term memory: conversation summarization + semantic retrieval (background job)**

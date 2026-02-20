@@ -47,16 +47,16 @@ class ContextService(ContextServiceInterface):
         """
         # Start with fixed context
         instruction = fixed_context
-        
-        # Add key context with optimization
-        key_context_section = self._build_key_context_section(key_context_data, user_timezone)
-        if key_context_section:
-            instruction += "\n\n" + key_context_section
-        
-        # Add conversation context with optimization
+
+        # Add RECENT CONVERSATION first so the model prioritizes the current exchange
         conversation_section = self._build_conversation_section(context_conversations, user_timezone)
         if conversation_section:
             instruction += "\n\n" + conversation_section
+
+        # Then key context (long-term facts)
+        key_context_section = self._build_key_context_section(key_context_data, user_timezone)
+        if key_context_section:
+            instruction += "\n\n" + key_context_section
         
         # Final length check and truncation if needed
         instruction = self._ensure_total_length_limit(instruction, fixed_context)
